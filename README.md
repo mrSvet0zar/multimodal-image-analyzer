@@ -31,7 +31,8 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 📤 Export en JSON ou Markdown
 - 🕑 Historique **persistant** (SQLite) avec vignettes
 - 🛡️ Validation + redimensionnement d'image (Pillow), rate limiting par IP
-- 🧪 Suite de tests pytest (24 tests)
+- 🌙 Dark mode (persistant, suit la préférence système) + micro-animations
+- 🧪 Suite de tests pytest (25 tests)
 
 ---
 
