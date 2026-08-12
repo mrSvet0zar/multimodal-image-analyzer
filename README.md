@@ -1,46 +1,47 @@
-# 🖼️ Image Analyzer — Multi-Modal AI
+# 🖼️ Image Analyzer — IA Multi-Modale
 
-A full-stack application that analyzes images with **Claude Vision**. Upload an
-image and get back a structured analysis: description, detected objects, sentiment,
-tags, and any extracted text. Results can be exported as JSON or Markdown, and a
-history panel keeps your recent analyses.
+Une application full-stack qui analyse des images avec **Claude Vision**. On
+téléverse une image et on récupère une analyse structurée : description, objets
+détectés, sentiment, tags et texte extrait. Les résultats s'exportent en JSON ou
+Markdown, et un panneau d'historique conserve les analyses récentes.
 
-**Stack:** FastAPI + Anthropic Claude Vision (backend) · React 18 + Vite (frontend)
+**Stack :** FastAPI + Claude Vision d'Anthropic (backend) · React 18 + Vite (frontend)
 
-### 🔗 Live demo
+### 🔗 Démo en ligne
 
-- **App:** https://multimodal-image-analyzer.vercel.app
-- **API:** https://multimodal-image-analyzer-production.up.railway.app/docs
+- **App :** https://multimodal-image-analyzer.vercel.app
+- **API :** https://multimodal-image-analyzer-production.up.railway.app/docs
 
-> Frontend on Vercel · Backend on Railway. Uploads and history are stored in
-> memory on the free tier, so they reset when the backend restarts.
-
----
-
-## Features
-
-- 🖱️ Drag & drop image upload (JPEG, PNG, GIF, WebP)
-- 🎚️ Three detail levels: simple / medium / detailed
-- 🧠 Structured analysis via Claude Vision (`claude-sonnet-5`)
-- 🏷️ Objects with confidence, sentiment, tags, extracted text
-- 📦 Batch analysis endpoint
-- 📤 Export as JSON or Markdown
-- 🕑 Session history with thumbnails
+> Frontend sur Vercel · Backend sur Railway. Les images et l'historique sont
+> stockés en mémoire sur l'offre gratuite : ils sont réinitialisés à chaque
+> redémarrage du backend.
 
 ---
 
-## Project structure
+## Fonctionnalités
+
+- 🖱️ Téléversement par glisser-déposer (JPEG, PNG, GIF, WebP)
+- 🎚️ Trois niveaux de détail : simple / medium / detailed
+- 🧠 Analyse structurée via Claude Vision (`claude-sonnet-5`)
+- 🏷️ Objets avec score de confiance, sentiment, tags, texte extrait
+- 📦 Endpoint d'analyse par lot (batch)
+- 📤 Export en JSON ou Markdown
+- 🕑 Historique de session avec vignettes
+
+---
+
+## Structure du projet
 
 ```
 multimodal/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py            # FastAPI routes
-│   │   ├── vision_service.py  # Claude Vision integration
-│   │   └── schemas.py         # Pydantic models
-│   ├── uploads/               # Stored images (gitignored)
+│   │   ├── main.py            # Routes FastAPI
+│   │   ├── vision_service.py  # Intégration Claude Vision
+│   │   └── schemas.py         # Modèles Pydantic
+│   ├── uploads/               # Images stockées (ignoré par git)
 │   ├── requirements.txt
-│   └── .env                   # Your secrets (gitignored)
+│   └── .env                   # Tes secrets (ignoré par git)
 └── frontend/
     ├── src/
     │   ├── App.jsx
@@ -54,34 +55,34 @@ multimodal/
 
 ---
 
-## Getting started
+## Démarrage
 
 ### 1. Backend
 
 ```bash
 cd backend
 python -m venv venv
-# Windows PowerShell:
+# Windows PowerShell :
 venv\Scripts\Activate.ps1
-# macOS/Linux:
+# macOS/Linux :
 # source venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-Add your Anthropic API key to `backend/.env`:
+Ajoute ta clé API Anthropic dans `backend/.env` :
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Run the server:
+Lance le serveur :
 
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-API docs are available at http://localhost:8000/docs
+La documentation interactive de l'API est disponible sur http://localhost:8000/docs
 
 ### 2. Frontend
 
@@ -91,28 +92,41 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173
+Ouvre http://localhost:5173
 
 ---
 
-## API reference
+## Référence de l'API
 
-| Method | Endpoint                     | Description                          |
-| ------ | ---------------------------- | ------------------------------------ |
-| POST   | `/api/analyze/image`         | Analyze a single image               |
-| POST   | `/api/analyze/batch`         | Analyze multiple images              |
-| GET    | `/api/history`               | List analyzed images (recent first)  |
-| GET    | `/api/analysis/{id}`         | Analysis metadata for one image      |
-| GET    | `/api/images/{id}`           | Serve the raw uploaded image         |
-| GET    | `/api/export/{id}?format=`   | Export analysis (`json` / `markdown`)|
-| GET    | `/health`                    | Health check                         |
+| Méthode | Endpoint                     | Description                              |
+| ------- | ---------------------------- | ---------------------------------------- |
+| POST    | `/api/analyze/image`         | Analyser une seule image                 |
+| POST    | `/api/analyze/batch`         | Analyser plusieurs images                |
+| GET     | `/api/history`               | Lister les images analysées (récentes)   |
+| GET     | `/api/analysis/{id}`         | Métadonnées d'analyse d'une image        |
+| GET     | `/api/images/{id}`           | Servir l'image téléversée brute          |
+| GET     | `/api/export/{id}?format=`   | Exporter l'analyse (`json` / `markdown`) |
+| GET     | `/health`                    | Vérification de l'état                    |
 
-Query params for analysis: `detail_level` (`simple`|`medium`|`detailed`), `language`.
+Paramètres de requête pour l'analyse : `detail_level` (`simple`|`medium`|`detailed`), `language`.
 
 ---
 
 ## Notes
 
-- Analyses are stored **in memory** — they reset when the backend restarts.
-  Swap `analyzed_images` in `main.py` for SQLite/Postgres to persist.
-- The Claude model is set via `VISION_MODEL` in `.env` (default `claude-sonnet-5`).
+- Les analyses sont stockées **en mémoire** — elles disparaissent au redémarrage
+  du backend. Remplacer `analyzed_images` dans `main.py` par SQLite/Postgres pour
+  les rendre persistantes.
+- Le modèle Claude se configure via `VISION_MODEL` dans `.env`
+  (défaut : `claude-sonnet-5`).
+
+---
+
+## Déploiement
+
+- **Backend (Railway) :** Root Directory = `backend`, démarrage via `backend/railway.json`.
+  Variables d'environnement à définir dans le dashboard (`ANTHROPIC_API_KEY`,
+  `VISION_MODEL`, `CORS_ORIGINS` = l'URL Vercel, `MAX_FILE_SIZE`, `UPLOAD_DIR`).
+  Railway fournit `PORT` automatiquement.
+- **Frontend (Vercel) :** Root Directory = `frontend`, variable `VITE_API_URL` = l'URL Railway.
+- Un push sur `main` redéploie automatiquement les deux services.
