@@ -7,6 +7,14 @@ history panel keeps your recent analyses.
 
 **Stack:** FastAPI + Anthropic Claude Vision (backend) · React 18 + Vite (frontend)
 
+### 🔗 Live demo
+
+- **App:** https://multimodal-image-analyzer.vercel.app
+- **API:** https://multimodal-image-analyzer-production.up.railway.app/docs
+
+> Frontend on Vercel · Backend on Railway. Uploads and history are stored in
+> memory on the free tier, so they reset when the backend restarts.
+
 ---
 
 ## Features
