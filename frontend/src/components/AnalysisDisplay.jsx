@@ -1,0 +1,71 @@
+import React from 'react';
+
+export default function AnalysisDisplay({ analysis, apiUrl, onExport }) {
+  return (
+    <div className="analysis-display">
+      <div className="analysis-header">
+        <h2>{analysis.filename}</h2>
+        <div className="export-buttons">
+          <button onClick={() => onExport('json')}>📋 JSON</button>
+          <button onClick={() => onExport('markdown')}>📝 Markdown</button>
+        </div>
+      </div>
+
+      {analysis.image_url && (
+        <div className="analysis-image">
+          <img src={`${apiUrl}${analysis.image_url}`} alt={analysis.filename} />
+        </div>
+      )}
+
+      <div className="description">
+        <h3>Description</h3>
+        <p>{analysis.description}</p>
+      </div>
+
+      {analysis.objects?.length > 0 && (
+        <div className="objects">
+          <h3>Objects detected</h3>
+          <div className="objects-grid">
+            {analysis.objects.map((obj, idx) => (
+              <div key={idx} className="object-card">
+                <div className="name">{obj.name}</div>
+                <div className="confidence">{(obj.confidence * 100).toFixed(0)}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="sentiment">
+        <h3>Sentiment</h3>
+        <p className={`sentiment-badge ${String(analysis.sentiment).toLowerCase().replace(/\s+/g, '-')}`}>
+          {analysis.sentiment}
+        </p>
+      </div>
+
+      {analysis.tags?.length > 0 && (
+        <div className="tags">
+          <h3>Tags</h3>
+          <div className="tags-cloud">
+            {analysis.tags.map((tag, idx) => (
+              <span key={idx} className="tag">
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {analysis.extracted_text && (
+        <div className="extracted-text">
+          <h3>Extracted text</h3>
+          <p>{analysis.extracted_text}</p>
+        </div>
+      )}
+
+      <div className="metadata">
+        <small>Processed in {analysis.processing_time_ms?.toFixed(0)}ms</small>
+      </div>
+    </div>
+  );
+}
