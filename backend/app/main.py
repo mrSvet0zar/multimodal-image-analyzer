@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import time
 import uuid
@@ -11,13 +12,17 @@ import anthropic
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app import db
 from app.image_utils import process_image
 from app.rate_limit import RateLimiter, client_key
 from app.schemas import AnalysisObject, ImageAnalysis
-from app.vision_service import SUPPORTED_MEDIA_TYPES, VisionAnalyzer
+from app.vision_service import (
+    STREAM_MARKER,
+    SUPPORTED_MEDIA_TYPES,
+    VisionAnalyzer,
+)
 
 load_dotenv()
 
@@ -127,6 +132,12 @@ async def _process_upload(
         ) from exc
     processing_time = (time.time() - start_time) * 1000
 
+    result = _build_result(image_id, filename, analysis_data, processing_time)
+    await db.save_analysis(result.model_dump(mode="json"), str(file_path))
+    return result
+
+
+def _parse_objects(analysis_data: dict) -> list[AnalysisObject]:
     objects: list[AnalysisObject] = []
     raw_objects = analysis_data.get("objects", [])
     if isinstance(raw_objects, list):
@@ -145,22 +156,24 @@ async def _process_upload(
                 )
             elif isinstance(obj, str):
                 objects.append(AnalysisObject(name=obj, confidence=0.8))
+    return objects
 
-    result = ImageAnalysis(
+
+def _build_result(
+    image_id: str, filename: str, analysis_data: dict, processing_time: float
+) -> ImageAnalysis:
+    return ImageAnalysis(
         id=image_id,
         filename=filename,
         uploaded_at=datetime.now(timezone.utc),
         description=analysis_data.get("description", ""),
-        objects=objects,
+        objects=_parse_objects(analysis_data),
         sentiment=str(analysis_data.get("sentiment", "neutral")),
         tags=[str(t) for t in analysis_data.get("tags", []) if t],
         extracted_text=str(analysis_data.get("extracted_text", "")),
         processing_time_ms=processing_time,
         image_url=f"/api/images/{image_id}",
     )
-
-    await db.save_analysis(result.model_dump(mode="json"), str(file_path))
-    return result
 
 
 # ============ Image Upload & Analysis ============
@@ -212,6 +225,106 @@ async def batch_analyze(
         "successful": sum(1 for r in results if "error" not in r),
         "results": results,
     }
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+@app.post("/api/analyze/stream", dependencies=[Depends(rate_limit)])
+async def analyze_stream(
+    file: UploadFile = File(...),
+    detail_level: str = "medium",
+    language: str = "en",
+):
+    """Analyze a single image, streaming the description as Server-Sent Events.
+
+    Emits `start`, many `delta` (description prose), then `complete` (the full
+    persisted analysis) — or `error`. Validation happens before the stream opens
+    so bad input still returns a normal 4xx.
+    """
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413, detail=f"File too large. Max size: {MAX_FILE_SIZE} bytes"
+        )
+    if file.content_type not in SUPPORTED_MEDIA_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid image format. Supported: JPEG, PNG, GIF, WebP",
+        )
+    try:
+        api_bytes = await asyncio.to_thread(process_image, content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    analyzer = _get_analyzer()
+    filename = file.filename or "image"
+    image_id = str(uuid.uuid4())
+    extension = filename.rsplit(".", 1)[-1] if "." in filename else "img"
+    file_path = UPLOAD_DIR / f"{image_id}.{extension}"
+
+    async with aiofiles.open(file_path, "wb") as f:
+        await f.write(content)
+
+    async def event_stream():
+        start_time = time.time()
+        yield _sse(
+            {
+                "type": "start",
+                "id": image_id,
+                "filename": filename,
+                "image_url": f"/api/images/{image_id}",
+            }
+        )
+
+        full = ""
+        sent = 0  # length of description already streamed
+        cut = False  # marker reached — stop streaming, JSON follows
+        try:
+            async for chunk in analyzer.stream_analyze_image(
+                api_bytes,
+                media_type="image/jpeg",
+                detail_level=detail_level,
+                language=language,
+            ):
+                full += chunk
+                if cut:
+                    continue
+                idx = full.find(STREAM_MARKER)
+                if idx != -1:
+                    description = full[:idx]
+                    if len(description) > sent:
+                        yield _sse({"type": "delta", "text": description[sent:]})
+                    sent = len(description)
+                    cut = True
+                else:
+                    # Hold back a possible partial marker at the tail.
+                    emit_upto = len(full) - (len(STREAM_MARKER) - 1)
+                    if emit_upto > sent:
+                        yield _sse({"type": "delta", "text": full[sent:emit_upto]})
+                        sent = emit_upto
+        except anthropic.APIError as exc:
+            file_path.unlink(missing_ok=True)
+            yield _sse({"type": "error", "detail": f"Vision service error: {exc}"})
+            return
+
+        if not cut and len(full) > sent:
+            yield _sse({"type": "delta", "text": full[sent:]})
+
+        processing_time = (time.time() - start_time) * 1000
+        analysis_data = VisionAnalyzer.parse_stream_output(full)
+        result = _build_result(image_id, filename, analysis_data, processing_time)
+        await db.save_analysis(result.model_dump(mode="json"), str(file_path))
+        yield _sse({"type": "complete", "analysis": result.model_dump(mode="json")})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ============ History & Retrieval ============

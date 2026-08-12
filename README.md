@@ -23,6 +23,7 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 🖱️ Téléversement par glisser-déposer (JPEG, PNG, GIF, WebP)
 - 🎚️ Trois niveaux de détail : simple / medium / detailed
 - 🧠 Analyse structurée via Claude Vision (`claude-sonnet-5`)
+- ⚡ Streaming en temps réel (SSE) : la description s'affiche au fil de l'eau
 - 🏷️ Objets avec score de confiance, sentiment, tags, texte extrait
 - 🌍 Analyse dans 8 langues (sélecteur dans l'UI)
 - 📦 Upload multiple + endpoint d'analyse par lot (batch)
@@ -116,6 +117,7 @@ les endpoints (service Vision mocké, aucun appel API réel).
 | Méthode | Endpoint                     | Description                              |
 | ------- | ---------------------------- | ---------------------------------------- |
 | POST    | `/api/analyze/image`         | Analyser une seule image                 |
+| POST    | `/api/analyze/stream`        | Analyser une image en streaming (SSE)    |
 | POST    | `/api/analyze/batch`         | Analyser plusieurs images                |
 | GET     | `/api/history`               | Lister les images analysées (récentes)   |
 | GET     | `/api/analysis/{id}`         | Métadonnées d'analyse d'une image        |

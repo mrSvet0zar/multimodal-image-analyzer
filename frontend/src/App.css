@@ -178,6 +178,54 @@ body {
   }
 }
 
+/* ---------- Streaming ---------- */
+
+.streaming-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #667eea;
+  margin-bottom: 14px;
+}
+
+.live-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+.streaming-text {
+  line-height: 1.6;
+  color: #333;
+  white-space: pre-wrap;
+}
+
+.stream-cursor {
+  color: #667eea;
+  animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 /* ---------- Analysis ---------- */
 
 .analysis-header {

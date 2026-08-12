@@ -42,6 +42,16 @@ DETAIL_PROMPTS = {
 }
 
 
+# Streaming format: prose description, then this marker, then a JSON object with
+# the structured fields. Lets us stream a clean description and parse the rest.
+STREAM_MARKER = "###DATA###"
+STREAM_DESC = {
+    "simple": "a brief 1-2 sentence description",
+    "medium": "a clear 2-3 sentence description",
+    "detailed": "a detailed 4-5 sentence description",
+}
+
+
 class VisionAnalyzer:
     def __init__(self):
         api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -51,6 +61,7 @@ class VisionAnalyzer:
                 "backend/.env and add your key."
             )
         self.client = anthropic.Anthropic(api_key=api_key)
+        self.async_client = anthropic.AsyncAnthropic(api_key=api_key)
         self.model = os.getenv("VISION_MODEL", "claude-sonnet-5")
 
     async def analyze_image(
@@ -106,6 +117,74 @@ class VisionAnalyzer:
         analysis.setdefault("extracted_text", "")
 
         return analysis
+
+    async def stream_analyze_image(
+        self,
+        image_data: bytes,
+        media_type: str = "image/jpeg",
+        detail_level: str = "medium",
+        language: str = "en",
+    ):
+        """Yield text chunks from Claude: prose description, then MARKER + JSON."""
+        base64_image = base64.standard_b64encode(image_data).decode("utf-8")
+        if media_type not in SUPPORTED_MEDIA_TYPES:
+            media_type = "image/jpeg"
+
+        desc = STREAM_DESC.get(detail_level, STREAM_DESC["medium"])
+        prompt = (
+            f"Analyze this image. First, write {desc} as plain prose "
+            "(no headings, no JSON, no markdown). Then output a line containing "
+            f"exactly {STREAM_MARKER} and nothing else, followed by a single JSON "
+            'object with keys: objects (array of {"name": string, "confidence": '
+            "number between 0 and 1}), sentiment (short string), tags (array of "
+            "5-10 strings), extracted_text (string, empty if none)."
+        )
+        if language and language != "en":
+            prompt += (
+                f"\n\nWrite the description and all text values in this "
+                f"language: {language}."
+            )
+
+        async with self.async_client.messages.stream(
+            model=self.model,
+            max_tokens=1500,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": base64_image,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+
+    @classmethod
+    def parse_stream_output(cls, full_text: str) -> Dict[str, Any]:
+        """Split streamed text into description + structured fields."""
+        if STREAM_MARKER in full_text:
+            description, _, rest = full_text.partition(STREAM_MARKER)
+            data = cls._parse_json(rest)
+        else:
+            description, data = full_text, {}
+
+        if not isinstance(data, dict):
+            data = {}
+        data["description"] = description.strip()
+        data.setdefault("objects", [])
+        data.setdefault("sentiment", "neutral")
+        data.setdefault("tags", [])
+        data.setdefault("extracted_text", "")
+        return data
 
     @staticmethod
     def _parse_json(text: str) -> Dict[str, Any]:

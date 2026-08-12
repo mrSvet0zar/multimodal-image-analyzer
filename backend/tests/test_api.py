@@ -1,5 +1,7 @@
 """Endpoint tests with the vision service mocked (no real API calls)."""
 
+import json
+
 
 def test_health(client):
     res = client.get("/health")
@@ -91,6 +93,52 @@ def test_batch_analyze(client, png_bytes):
     data = res.json()
     assert data["total"] == 2
     assert data["successful"] == 2
+
+
+def test_analyze_stream(client, png_bytes):
+    from app import main
+
+    async def fake_stream(*args, **kwargs):
+        for chunk in [
+            "A red square on white. ",
+            "###DATA###",
+            '{"objects":[{"name":"square","confidence":0.9}],'
+            '"sentiment":"neutral","tags":["red","square"],"extracted_text":""}',
+        ]:
+            yield chunk
+
+    main.vision_analyzer.stream_analyze_image = fake_stream
+
+    res = client.post(
+        "/api/analyze/stream",
+        files={"file": ("a.png", png_bytes, "image/png")},
+    )
+    assert res.status_code == 200
+    assert "text/event-stream" in res.headers["content-type"]
+
+    events = [
+        json.loads(block.strip()[len("data:") :].strip())
+        for block in res.text.split("\n\n")
+        if block.strip().startswith("data:")
+    ]
+    types = [e["type"] for e in events]
+    assert types[0] == "start"
+    assert "delta" in types
+    assert types[-1] == "complete"
+
+    # Description streamed as prose; marker and JSON never leak into deltas.
+    streamed = "".join(e["text"] for e in events if e["type"] == "delta")
+    assert "A red square on white." in streamed
+    assert "###DATA###" not in streamed
+    assert "{" not in streamed
+
+    analysis = events[-1]["analysis"]
+    assert analysis["description"] == "A red square on white."
+    assert analysis["objects"][0]["name"] == "square"
+    assert analysis["tags"] == ["red", "square"]
+
+    # Persisted to history.
+    assert len(client.get("/api/history").json()) == 1
 
 
 def test_export_markdown(client, png_bytes):

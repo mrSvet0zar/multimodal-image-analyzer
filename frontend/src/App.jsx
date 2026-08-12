@@ -10,6 +10,8 @@ function App() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [streamText, setStreamText] = useState('');
+  const [streaming, setStreaming] = useState(false);
 
   // Load the persisted history from the backend on first render.
   useEffect(() => {
@@ -21,6 +23,52 @@ function App() {
       });
   }, []);
 
+  const streamSingle = async (file, query) => {
+    setStreaming(true);
+    setStreamText('');
+    setCurrentAnalysis(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_URL}/api/analyze/stream?${query}`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok || !response.body) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `Error: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let acc = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop();
+      for (const block of blocks) {
+        const line = block.split('\n').find((l) => l.startsWith('data:'));
+        if (!line) continue;
+        const evt = JSON.parse(line.slice(5).trim());
+        if (evt.type === 'delta') {
+          acc += evt.text;
+          setStreamText(acc);
+        } else if (evt.type === 'complete') {
+          setCurrentAnalysis(evt.analysis);
+          setHistory((prev) => [evt.analysis, ...prev]);
+        } else if (evt.type === 'error') {
+          throw new Error(evt.detail);
+        }
+      }
+    }
+  };
+
   const handleUpload = async (files, detailLevel, language) => {
     setLoading(true);
     setError(null);
@@ -29,21 +77,7 @@ function App() {
 
     try {
       if (files.length === 1) {
-        const formData = new FormData();
-        formData.append('file', files[0]);
-
-        const response = await fetch(`${API_URL}/api/analyze/image?${query}`, {
-          method: 'POST',
-          body: formData,
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          throw new Error(body.detail || `Error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        setCurrentAnalysis(data);
-        setHistory((prev) => [data, ...prev]);
+        await streamSingle(files[0], query);
       } else {
         const formData = new FormData();
         files.forEach((f) => formData.append('files', f));
@@ -77,6 +111,7 @@ function App() {
       setError(err.message);
     } finally {
       setLoading(false);
+      setStreaming(false);
     }
   };
 
@@ -132,7 +167,20 @@ function App() {
 
           {error && <div className="error-banner">⚠️ {error}</div>}
 
-          {loading && (
+          {streaming && (
+            <div className="analysis-display streaming-card">
+              <div className="streaming-header">
+                <span className="live-dot" />
+                Analyzing…
+              </div>
+              <p className="streaming-text">
+                {streamText}
+                <span className="stream-cursor">▋</span>
+              </p>
+            </div>
+          )}
+
+          {loading && !streaming && (
             <div className="loading">
               <div className="spinner" />
               Analyzing…
