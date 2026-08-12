@@ -1,14 +1,45 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 
 export default function History({ images, apiUrl, onSelect, onDelete, activeId }) {
+  const [query, setQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return images;
+    return images.filter((img) => {
+      const haystack = [
+        img.filename,
+        img.description,
+        img.sentiment,
+        ...(img.tags || []),
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [images, query]);
+
   return (
     <div className="history">
       <h3>History</h3>
+
+      {images.length > 0 && (
+        <input
+          type="search"
+          className="history-search"
+          placeholder="Search filename, tags, text…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
+
       {images.length === 0 ? (
         <p className="history-empty">No images analyzed yet.</p>
+      ) : filtered.length === 0 ? (
+        <p className="history-empty">No results for “{query}”.</p>
       ) : (
         <ul className="history-list">
-          {images.map((img) => (
+          {filtered.map((img) => (
             <li
               key={img.id}
               className={`history-item ${img.id === activeId ? 'active' : ''}`}

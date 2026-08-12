@@ -21,27 +21,58 @@ function App() {
       });
   }, []);
 
-  const handleImageUpload = async (file, detailLevel) => {
+  const handleUpload = async (files, detailLevel, language) => {
     setLoading(true);
     setError(null);
 
-    const formData = new FormData();
-    formData.append('file', file);
+    const query = `detail_level=${detailLevel}&language=${language}`;
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/analyze/image?detail_level=${detailLevel}`,
-        { method: 'POST', body: formData }
-      );
+      if (files.length === 1) {
+        const formData = new FormData();
+        formData.append('file', files[0]);
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.detail || `Error: ${response.status}`);
+        const response = await fetch(`${API_URL}/api/analyze/image?${query}`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail || `Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setCurrentAnalysis(data);
+        setHistory((prev) => [data, ...prev]);
+      } else {
+        const formData = new FormData();
+        files.forEach((f) => formData.append('files', f));
+
+        const response = await fetch(`${API_URL}/api/analyze/batch?${query}`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail || `Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const ok = (data.results || []).filter((r) => !r.error);
+        const failed = (data.results || []).filter((r) => r.error);
+
+        if (ok.length > 0) {
+          setCurrentAnalysis(ok[0]);
+          setHistory((prev) => [...ok, ...prev]);
+        }
+        if (failed.length > 0) {
+          setError(
+            `${failed.length} image(s) failed: ${failed
+              .map((f) => f.filename)
+              .join(', ')}`
+          );
+        }
       }
-
-      const data = await response.json();
-      setCurrentAnalysis(data);
-      setHistory((prev) => [data, ...prev]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -97,14 +128,14 @@ function App() {
 
       <div className="container">
         <div className="main">
-          <ImageUpload onUpload={handleImageUpload} loading={loading} />
+          <ImageUpload onUpload={handleUpload} loading={loading} />
 
           {error && <div className="error-banner">⚠️ {error}</div>}
 
           {loading && (
             <div className="loading">
               <div className="spinner" />
-              Analyzing image…
+              Analyzing…
             </div>
           )}
 
