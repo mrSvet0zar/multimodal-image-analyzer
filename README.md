@@ -126,7 +126,23 @@ Paramètres de requête pour l'analyse : `detail_level` (`simple`|`medium`|`deta
 
 - **Backend (Railway) :** Root Directory = `backend`, démarrage via `backend/railway.json`.
   Variables d'environnement à définir dans le dashboard (`ANTHROPIC_API_KEY`,
-  `VISION_MODEL`, `CORS_ORIGINS` = l'URL Vercel, `MAX_FILE_SIZE`, `UPLOAD_DIR`).
+  `VISION_MODEL`, `CORS_ORIGINS` = l'URL Vercel, `MAX_FILE_SIZE`).
   Railway fournit `PORT` automatiquement.
 - **Frontend (Vercel) :** Root Directory = `frontend`, variable `VITE_API_URL` = l'URL Railway.
 - Un push sur `main` redéploie automatiquement les deux services.
+
+### ⚠️ Persistance en production (Railway Volume)
+
+Le système de fichiers d'un conteneur Railway est **éphémère** : sans volume, la
+base SQLite et les images sont réinitialisées à chaque redéploiement. Pour une
+persistance réelle :
+
+1. Railway → service backend → **Volumes** → **New Volume**, mount path : `/data`
+2. Dans **Variables**, pointer la base et les uploads vers le volume :
+   ```
+   DB_PATH=/data/analyses.db
+   UPLOAD_DIR=/data/uploads
+   ```
+3. Redéployer. L'historique et les images survivent désormais aux redéploiements.
+
+En local, les valeurs par défaut (`./analyses.db`, `./uploads`) suffisent.
