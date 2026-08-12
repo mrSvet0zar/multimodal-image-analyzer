@@ -11,6 +11,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
+from app import db
 from app.schemas import AnalysisObject, ImageAnalysis
 from app.vision_service import SUPPORTED_MEDIA_TYPES, VisionAnalyzer
 
@@ -19,18 +20,15 @@ load_dotenv()
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))
 
-# In-memory stores (swap for a DB in production).
-analyzed_images: dict[str, dict] = {}
-image_paths: dict[str, Path] = {}
-
 vision_analyzer: VisionAnalyzer | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup / shutdown. Verifies the Claude API connection once on boot."""
+    """Startup / shutdown. Init DB and verify the Claude API connection once."""
     global vision_analyzer
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    await db.init_db()
     try:
         vision_analyzer = VisionAnalyzer()
         vision_analyzer.client.messages.create(
@@ -92,7 +90,6 @@ async def _process_upload(
 
     async with aiofiles.open(file_path, "wb") as f:
         await f.write(content)
-    image_paths[image_id] = file_path
 
     start_time = time.time()
     analysis_data = await _get_analyzer().analyze_image(
@@ -135,7 +132,7 @@ async def _process_upload(
         image_url=f"/api/images/{image_id}",
     )
 
-    analyzed_images[image_id] = result.model_dump(mode="json")
+    await db.save_analysis(result.model_dump(mode="json"), str(file_path))
     return result
 
 
@@ -192,28 +189,38 @@ async def batch_analyze(
 @app.get("/api/history")
 async def get_history():
     """Get analysis history (most recent first)."""
-    return sorted(
-        analyzed_images.values(),
-        key=lambda a: a.get("uploaded_at", ""),
-        reverse=True,
-    )
+    return await db.get_all()
 
 
 @app.get("/api/analysis/{image_id}")
 async def get_analysis(image_id: str):
     """Get the analysis metadata for an image."""
-    if image_id not in analyzed_images:
+    analysis = await db.get_one(image_id)
+    if analysis is None:
         raise HTTPException(status_code=404, detail="Image not found")
-    return analyzed_images[image_id]
+    return analysis
+
+
+@app.delete("/api/analysis/{image_id}")
+async def delete_analysis(image_id: str):
+    """Delete an analysis and its stored image file."""
+    file_path = await db.delete(image_id)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    try:
+        Path(file_path).unlink(missing_ok=True)
+    except OSError:
+        pass
+    return {"deleted": image_id}
 
 
 @app.get("/api/images/{image_id}")
 async def get_image_file(image_id: str):
     """Serve the raw uploaded image so the frontend can display it."""
-    path = image_paths.get(image_id)
-    if path is None or not path.exists():
+    file_path = await db.get_file_path(image_id)
+    if file_path is None or not Path(file_path).exists():
         raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(path)
+    return FileResponse(file_path)
 
 
 # ============ Export ============
@@ -222,10 +229,9 @@ async def get_image_file(image_id: str):
 @app.get("/api/export/{image_id}")
 async def export_analysis(image_id: str, format: str = "json"):
     """Export an analysis as JSON or Markdown."""
-    if image_id not in analyzed_images:
+    data = await db.get_one(image_id)
+    if data is None:
         raise HTTPException(status_code=404, detail="Image not found")
-
-    data = analyzed_images[image_id]
 
     if format == "json":
         return JSONResponse(data)

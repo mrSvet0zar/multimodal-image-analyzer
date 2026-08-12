@@ -14,6 +14,11 @@ env/
 backend/uploads/*
 !backend/uploads/.gitkeep
 
+# SQLite database
+*.db
+*.db-wal
+*.db-shm
+
 # Node
 node_modules/
 dist/

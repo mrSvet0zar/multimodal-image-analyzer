@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ImageUpload from './components/ImageUpload';
 import AnalysisDisplay from './components/AnalysisDisplay';
 import History from './components/History';
@@ -10,6 +10,16 @@ function App() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Load the persisted history from the backend on first render.
+  useEffect(() => {
+    fetch(`${API_URL}/api/history`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setHistory(Array.isArray(data) ? data : []))
+      .catch(() => {
+        /* backend offline — start with an empty history */
+      });
+  }, []);
 
   const handleImageUpload = async (file, detailLevel) => {
     setLoading(true);
@@ -31,7 +41,7 @@ function App() {
 
       const data = await response.json();
       setCurrentAnalysis(data);
-      setHistory((prev) => [data, ...prev.slice(0, 9)]);
+      setHistory((prev) => [data, ...prev]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -59,6 +69,20 @@ function App() {
       a.download = `analysis-${currentAnalysis.id.slice(0, 8)}.${format === 'json' ? 'json' : 'md'}`;
       a.click();
       window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      const response = await fetch(`${API_URL}/api/analysis/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error(`Error: ${response.status}`);
+
+      setHistory((prev) => prev.filter((img) => img.id !== id));
+      setCurrentAnalysis((cur) => (cur?.id === id ? null : cur));
     } catch (err) {
       setError(err.message);
     }
@@ -98,6 +122,7 @@ function App() {
             images={history}
             apiUrl={API_URL}
             onSelect={setCurrentAnalysis}
+            onDelete={handleDelete}
             activeId={currentAnalysis?.id}
           />
         </aside>

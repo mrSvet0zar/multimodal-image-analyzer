@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function History({ images, apiUrl, onSelect, activeId }) {
+export default function History({ images, apiUrl, onSelect, onDelete, activeId }) {
   return (
     <div className="history">
       <h3>History</h3>
@@ -25,6 +25,18 @@ export default function History({ images, apiUrl, onSelect, activeId }) {
                   {(img.tags || []).slice(0, 3).join(' · ')}
                 </div>
               </div>
+              {onDelete && (
+                <button
+                  className="history-delete"
+                  title="Delete this analysis"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(img.id);
+                  }}
+                >
+                  ✕
+                </button>
+              )}
             </li>
           ))}
         </ul>
