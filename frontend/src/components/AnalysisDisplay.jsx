@@ -28,8 +28,18 @@ export default function AnalysisDisplay({ analysis, apiUrl, onExport }) {
           <div className="objects-grid">
             {analysis.objects.map((obj, idx) => (
               <div key={idx} className="object-card">
-                <div className="name">{obj.name}</div>
-                <div className="confidence">{(obj.confidence * 100).toFixed(0)}%</div>
+                <div className="object-top">
+                  <span className="name">{obj.name}</span>
+                  <span className="confidence">
+                    {(obj.confidence * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <div className="confidence-bar">
+                  <div
+                    className="confidence-fill"
+                    style={{ width: `${Math.round(obj.confidence * 100)}%` }}
+                  />
+                </div>
               </div>
             ))}
           </div>

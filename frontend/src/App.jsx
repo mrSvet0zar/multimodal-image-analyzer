@@ -12,6 +12,20 @@ function App() {
   const [error, setError] = useState(null);
   const [streamText, setStreamText] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [theme, setTheme] = useState(
+    () =>
+      document.documentElement.dataset.theme ||
+      localStorage.getItem('theme') ||
+      'light'
+  );
+
+  // Apply + persist the theme whenever it changes.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
   // Load the persisted history from the backend on first render.
   useEffect(() => {
@@ -157,8 +171,21 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>🖼️ Image Analyzer</h1>
-        <p>Powered by Claude Vision</p>
+        <div className="header-titles">
+          <h1>
+            <span className="logo">🖼️</span>{' '}
+            <span className="gradient-text">Image Analyzer</span>
+          </h1>
+          <p>Powered by Claude Vision</p>
+        </div>
+        <button
+          className="theme-toggle"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label="Toggle theme"
+        >
+          {theme === 'dark' ? '☀️' : '🌙'}
+        </button>
       </header>
 
       <div className="container">
