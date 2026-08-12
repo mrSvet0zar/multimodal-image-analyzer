@@ -24,9 +24,13 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 🎚️ Trois niveaux de détail : simple / medium / detailed
 - 🧠 Analyse structurée via Claude Vision (`claude-sonnet-5`)
 - 🏷️ Objets avec score de confiance, sentiment, tags, texte extrait
-- 📦 Endpoint d'analyse par lot (batch)
+- 🌍 Analyse dans 8 langues (sélecteur dans l'UI)
+- 📦 Upload multiple + endpoint d'analyse par lot (batch)
+- 🔍 Recherche/filtre dans l'historique
 - 📤 Export en JSON ou Markdown
-- 🕑 Historique de session avec vignettes
+- 🕑 Historique **persistant** (SQLite) avec vignettes
+- 🛡️ Validation + redimensionnement d'image (Pillow), rate limiting par IP
+- 🧪 Suite de tests pytest (24 tests)
 
 ---
 
@@ -93,6 +97,17 @@ npm run dev
 ```
 
 Ouvre http://localhost:5173
+
+### 3. Tests (backend)
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+24 tests couvrent le traitement d'image, la couche SQLite, le rate limiter et
+les endpoints (service Vision mocké, aucun appel API réel).
 
 ---
 

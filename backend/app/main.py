@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import uuid
@@ -6,12 +7,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import aiofiles
+import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from app import db
+from app.image_utils import process_image
+from app.rate_limit import RateLimiter, client_key
 from app.schemas import AnalysisObject, ImageAnalysis
 from app.vision_service import SUPPORTED_MEDIA_TYPES, VisionAnalyzer
 
@@ -19,8 +23,15 @@ load_dotenv()
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))
+RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", 30))
+RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", 60))
 
 vision_analyzer: VisionAnalyzer | None = None
+analyze_limiter = RateLimiter(RATE_LIMIT_MAX, RATE_LIMIT_WINDOW)
+
+
+async def rate_limit(request: Request) -> None:
+    analyze_limiter.check(client_key(request))
 
 
 @asynccontextmanager
@@ -72,6 +83,9 @@ async def _process_upload(
     language: str,
 ) -> ImageAnalysis:
     """Validate, persist and analyze a single image. Shared by both endpoints."""
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=413,
@@ -84,20 +98,33 @@ async def _process_upload(
             detail="Invalid image format. Supported: JPEG, PNG, GIF, WebP",
         )
 
+    # Validate + normalize (resize/re-encode) off the event loop.
+    try:
+        api_bytes = await asyncio.to_thread(process_image, content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     image_id = str(uuid.uuid4())
     extension = filename.rsplit(".", 1)[-1] if "." in filename else "img"
     file_path = UPLOAD_DIR / f"{image_id}.{extension}"
 
+    # Store the original bytes for display; send the normalized JPEG to Claude.
     async with aiofiles.open(file_path, "wb") as f:
         await f.write(content)
 
     start_time = time.time()
-    analysis_data = await _get_analyzer().analyze_image(
-        content,
-        media_type=content_type,
-        detail_level=detail_level,
-        language=language,
-    )
+    try:
+        analysis_data = await _get_analyzer().analyze_image(
+            api_bytes,
+            media_type="image/jpeg",
+            detail_level=detail_level,
+            language=language,
+        )
+    except anthropic.APIError as exc:
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=502, detail=f"Vision service error: {exc}"
+        ) from exc
     processing_time = (time.time() - start_time) * 1000
 
     objects: list[AnalysisObject] = []
@@ -139,7 +166,11 @@ async def _process_upload(
 # ============ Image Upload & Analysis ============
 
 
-@app.post("/api/analyze/image", response_model=ImageAnalysis)
+@app.post(
+    "/api/analyze/image",
+    response_model=ImageAnalysis,
+    dependencies=[Depends(rate_limit)],
+)
 async def analyze_image(
     file: UploadFile = File(...),
     detail_level: str = "medium",
@@ -152,7 +183,7 @@ async def analyze_image(
     )
 
 
-@app.post("/api/analyze/batch")
+@app.post("/api/analyze/batch", dependencies=[Depends(rate_limit)])
 async def batch_analyze(
     files: list[UploadFile] = File(...),
     detail_level: str = "medium",
