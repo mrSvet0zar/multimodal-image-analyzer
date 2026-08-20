@@ -3,7 +3,11 @@
 # Then open http://localhost:5173
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      # Named Dockerfile.local so Railway's builder ignores it (Railway uses
+      # Nixpacks via railway.json); this file is only for local docker compose.
+      dockerfile: Dockerfile.local
     ports:
       - "8000:8000"
     environment:
