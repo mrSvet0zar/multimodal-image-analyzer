@@ -14,8 +14,8 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - **App :** https://multimodal-image-analyzer.vercel.app
 - **API :** https://multimodal-image-analyzer-production.up.railway.app/docs
 
-> Frontend sur Vercel · Backend sur Railway (build Nixpacks + volume persistant
-> pour SQLite et les images).
+> Frontend sur Vercel · Backend sur Railway (Nixpacks). Base **Postgres**
+> (migrations Alembic) ; les images sur un volume persistant.
 
 ---
 
@@ -53,8 +53,9 @@ multimodal/
 │   │   ├── logging_setup.py   # Logs JSON structurés (structlog)
 │   │   ├── image_utils.py     # Validation + redimensionnement (Pillow)
 │   │   ├── rate_limit.py      # Rate limiting par IP
-│   │   ├── db.py             # Persistance SQLite (aiosqlite) + métriques
+│   │   ├── db.py             # Persistance SQLAlchemy (SQLite/Postgres) + métriques
 │   │   └── schemas.py         # Modèles Pydantic
+│   ├── alembic/               # Migrations de schéma (versions/)
 │   ├── evals/                 # Dataset golden + scoring (run_evals.py)
 │   ├── tests/                 # 34 tests pytest
 │   ├── Dockerfile.local       # Image backend (docker compose ; Railway = Nixpacks)
@@ -166,8 +167,9 @@ Paramètres de requête pour l'analyse : `detail_level` (`simple`|`medium`|`deta
   avec un **request-id** de corrélation ; agrégats via `GET /api/metrics`.
 - **Config typée** — `pydantic-settings` ([`config.py`](backend/app/config.py)),
   source unique validée au démarrage.
-- **Persistance** — SQLite via `aiosqlite` ; en prod, un volume Railway au
-  `/data` (voir Déploiement).
+- **Persistance** — **SQLAlchemy 2.0 async** : un seul code parle SQLite
+  (dev/tests, zéro serveur) *ou* **Postgres** (prod) selon `DATABASE_URL`.
+  Schéma versionné par **Alembic** (`alembic upgrade head` au déploiement).
 
 ### Évaluations (evals)
 
@@ -192,9 +194,9 @@ disponibles (`pre-commit install`).
 
 ## Déploiement
 
-- **Backend (Railway) :** Root Directory = `backend`, démarrage via `backend/railway.json`.
-  Variables d'environnement à définir dans le dashboard (`ANTHROPIC_API_KEY`,
-  `VISION_MODEL`, `CORS_ORIGINS` = l'URL Vercel, `MAX_FILE_SIZE`).
+- **Backend (Railway) :** Root Directory = `backend`, démarrage via `backend/railway.json`
+  (qui lance `alembic upgrade head` avant `uvicorn`). Variables à définir :
+  `ANTHROPIC_API_KEY`, `VISION_MODEL`, `CORS_ORIGINS` = l'URL Vercel, `MAX_FILE_SIZE`.
   Railway fournit `PORT` automatiquement.
 - **Frontend (Vercel) :** Root Directory = `frontend`, variable `VITE_API_URL` = l'URL Railway.
 - Un push sur `main` redéploie automatiquement les deux services.
@@ -203,18 +205,19 @@ disponibles (`pre-commit install`).
 > en trouve un, au lieu d'utiliser Nixpacks. L'image Docker locale est donc
 > nommée `Dockerfile.local` — ne pas la renommer en `Dockerfile`.
 
-### ⚠️ Persistance en production (Railway Volume)
+### Base Postgres (Railway)
 
-Le système de fichiers d'un conteneur Railway est **éphémère** : sans volume, la
-base SQLite et les images sont réinitialisées à chaque redéploiement. Pour une
-persistance réelle :
+1. Projet Railway → **New** → **Database** → **Add PostgreSQL**.
+2. Service backend → **Variables** → nouvelle variable `DATABASE_URL` =
+   `${{Postgres.DATABASE_URL}}` (référence vers le Postgres). Le code normalise
+   automatiquement `postgresql://` → `postgresql+asyncpg://`.
+3. Au déploiement, `railway.json` applique les migrations Alembic. Fait.
 
-1. Railway → service backend → **Volumes** → **New Volume**, mount path : `/data`
-2. Dans **Variables**, pointer la base et les uploads vers le volume :
-   ```
-   DB_PATH=/data/analyses.db
-   UPLOAD_DIR=/data/uploads
-   ```
-3. Redéployer. L'historique et les images survivent désormais aux redéploiements.
+En local/tests, `DATABASE_URL` par défaut est une base SQLite (`./analyses.db`),
+aucun serveur requis.
 
-En local, les valeurs par défaut (`./analyses.db`, `./uploads`) suffisent.
+### Images (Railway Volume)
+
+Le disque d'un conteneur Railway est éphémère. Pour conserver les **images**
+uploadées entre redéploiements : service backend → **Volumes** → **New Volume**,
+mount path `/data`, puis `UPLOAD_DIR=/data/uploads`.

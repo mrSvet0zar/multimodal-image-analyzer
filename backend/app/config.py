@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     # --- Uploads / storage ---
     max_file_size: int = 10 * 1024 * 1024
     upload_dir: str = "./uploads"
-    db_path: str = "./analyses.db"
+
+    # --- Database ---
+    # SQLite by default (dev/tests); set DATABASE_URL to a Postgres URL in prod.
+    database_url: str = "sqlite+aiosqlite:///./analyses.db"
 
     # --- HTTP / limits ---
     api_port: int = 8000
@@ -40,6 +43,16 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def async_database_url(self) -> str:
+        """Normalize the DB URL to an async driver (Railway gives postgresql://)."""
+        url = self.database_url
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
 
     @property
     def models(self) -> list[str]:

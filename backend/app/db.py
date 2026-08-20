@@ -1,95 +1,143 @@
-"""SQLite persistence layer for image analyses.
+"""Async persistence layer (SQLAlchemy 2.0).
 
-Stores the full analysis payload as JSON alongside a few indexed columns so the
-history survives backend restarts. A new connection is opened per call, which is
-plenty for this workload and keeps lifecycle management trivial.
+Speaks SQLite (dev/tests) or Postgres (prod) via a single code path — the driver
+is selected by `DATABASE_URL`. Public functions keep dict in / dict out so the
+rest of the app is storage-agnostic.
 """
 
-import json
-from pathlib import Path
+from typing import Any
 
-import aiosqlite
+from sqlalchemy import JSON, Float, Integer, String, Text, func, select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
-DB_PATH = settings.db_path
 
-_CREATE_TABLE = """
-CREATE TABLE IF NOT EXISTS analyses (
-    id          TEXT PRIMARY KEY,
-    filename    TEXT NOT NULL,
-    uploaded_at TEXT NOT NULL,
-    file_path   TEXT NOT NULL,
-    data        TEXT NOT NULL
-);
-"""
+class Base(DeclarativeBase):
+    pass
+
+
+class Analysis(Base):
+    __tablename__ = "analyses"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(512))
+    uploaded_at: Mapped[str] = mapped_column(String(64), index=True)
+    file_path: Mapped[str] = mapped_column(String(1024))
+    description: Mapped[str] = mapped_column(Text, default="")
+    sentiment: Mapped[str] = mapped_column(String(128), default="neutral")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    objects: Mapped[list] = mapped_column(JSON, default=list)
+    extracted_text: Mapped[str] = mapped_column(Text, default="")
+    processing_time_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "uploaded_at": self.uploaded_at,
+            "description": self.description,
+            "objects": self.objects or [],
+            "sentiment": self.sentiment,
+            "tags": self.tags or [],
+            "extracted_text": self.extracted_text,
+            "processing_time_ms": self.processing_time_ms,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_usd": self.cost_usd,
+            "image_url": f"/api/images/{self.id}",
+        }
+
+
+_engine: AsyncEngine | None = None
+_sessionmaker: async_sessionmaker | None = None
+
+
+def configure(database_url: str | None = None) -> None:
+    """(Re)create the engine + session factory. Called at import and by tests."""
+    global _engine, _sessionmaker
+    url = database_url or settings.async_database_url
+    kwargs: dict[str, Any] = {}
+    if url.startswith("sqlite"):
+        # Avoid binding pooled connections to a specific event loop (tests).
+        kwargs["poolclass"] = NullPool
+    _engine = create_async_engine(url, **kwargs)
+    _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
+
+
+configure()
 
 
 async def init_db() -> None:
-    """Create the database file, parent dir and table if needed."""
-    parent = Path(DB_PATH).parent
-    if str(parent) not in ("", "."):
-        parent.mkdir(parents=True, exist_ok=True)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("PRAGMA journal_mode=WAL;")
-        await db.execute(_CREATE_TABLE)
-        await db.commit()
+    """Create tables if missing. Dev/test convenience; prod uses Alembic."""
+    assert _engine is not None
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 async def save_analysis(analysis: dict, file_path: str) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO analyses "
-            "(id, filename, uploaded_at, file_path, data) VALUES (?, ?, ?, ?, ?)",
-            (
-                analysis["id"],
-                analysis["filename"],
-                analysis["uploaded_at"],
-                file_path,
-                json.dumps(analysis),
-            ),
+    assert _sessionmaker is not None
+    async with _sessionmaker() as session:
+        row = Analysis(
+            id=analysis["id"],
+            filename=analysis["filename"],
+            uploaded_at=analysis["uploaded_at"],
+            file_path=file_path,
+            description=analysis.get("description", ""),
+            sentiment=analysis.get("sentiment", "neutral"),
+            tags=analysis.get("tags", []),
+            objects=analysis.get("objects", []),
+            extracted_text=analysis.get("extracted_text", ""),
+            processing_time_ms=analysis.get("processing_time_ms", 0.0),
+            input_tokens=analysis.get("input_tokens", 0),
+            output_tokens=analysis.get("output_tokens", 0),
+            cost_usd=analysis.get("cost_usd", 0.0),
         )
-        await db.commit()
+        await session.merge(row)
+        await session.commit()
 
 
 async def get_all() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT data FROM analyses ORDER BY uploaded_at DESC") as cur:
-            rows = await cur.fetchall()
-    return [json.loads(row[0]) for row in rows]
+    assert _sessionmaker is not None
+    async with _sessionmaker() as session:
+        result = await session.execute(select(Analysis).order_by(Analysis.uploaded_at.desc()))
+        return [row.to_dict() for row in result.scalars()]
 
 
 async def get_one(image_id: str) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT data FROM analyses WHERE id = ?", (image_id,)) as cur:
-            row = await cur.fetchone()
-    return json.loads(row[0]) if row else None
+    assert _sessionmaker is not None
+    async with _sessionmaker() as session:
+        row = await session.get(Analysis, image_id)
+        return row.to_dict() if row else None
 
 
 async def get_file_path(image_id: str) -> str | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT file_path FROM analyses WHERE id = ?", (image_id,)) as cur:
-            row = await cur.fetchone()
-    return row[0] if row else None
+    assert _sessionmaker is not None
+    async with _sessionmaker() as session:
+        row = await session.get(Analysis, image_id)
+        return row.file_path if row else None
 
 
 async def get_metrics() -> dict:
-    """Aggregate observability metrics across all analyses."""
-    query = """
-        SELECT
-            COUNT(*) AS total,
-            COALESCE(SUM(json_extract(data, '$.input_tokens')), 0) AS input_tokens,
-            COALESCE(SUM(json_extract(data, '$.output_tokens')), 0) AS output_tokens,
-            COALESCE(SUM(json_extract(data, '$.cost_usd')), 0) AS cost_usd,
-            COALESCE(AVG(json_extract(data, '$.processing_time_ms')), 0) AS avg_ms
-        FROM analyses
-    """
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(query) as cur:
-            row = await cur.fetchone()
+    assert _sessionmaker is not None
+    async with _sessionmaker() as session:
+        result = await session.execute(
+            select(
+                func.count(Analysis.id),
+                func.coalesce(func.sum(Analysis.input_tokens), 0),
+                func.coalesce(func.sum(Analysis.output_tokens), 0),
+                func.coalesce(func.sum(Analysis.cost_usd), 0.0),
+                func.coalesce(func.avg(Analysis.processing_time_ms), 0.0),
+            )
+        )
+        total, input_tokens, output_tokens, cost_usd, avg_ms = result.one()
 
-    assert row is not None  # the aggregate query always returns one row
-    total, input_tokens, output_tokens, cost_usd, avg_ms = row
     return {
         "total_analyses": int(total),
         "total_input_tokens": int(input_tokens),
@@ -101,11 +149,12 @@ async def get_metrics() -> dict:
 
 async def delete(image_id: str) -> str | None:
     """Delete a row. Returns the stored file_path if it existed, else None."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT file_path FROM analyses WHERE id = ?", (image_id,)) as cur:
-            row = await cur.fetchone()
+    assert _sessionmaker is not None
+    async with _sessionmaker() as session:
+        row = await session.get(Analysis, image_id)
         if row is None:
             return None
-        await db.execute("DELETE FROM analyses WHERE id = ?", (image_id,))
-        await db.commit()
-    return row[0]
+        file_path = row.file_path
+        await session.execute(sa_delete(Analysis).where(Analysis.id == image_id))
+        await session.commit()
+        return file_path

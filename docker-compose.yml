@@ -1,7 +1,21 @@
-# Local, reproducible full-stack run.
+# Local, reproducible full-stack run — mirrors prod (Postgres + migrations).
 #   ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 # Then open http://localhost:5173
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: analyzer
+      POSTGRES_PASSWORD: analyzer
+      POSTGRES_DB: analyzer
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analyzer"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: ./backend
@@ -14,10 +28,13 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in your shell or a .env file}
       VISION_MODEL: ${VISION_MODEL:-claude-sonnet-5}
       CORS_ORIGINS: http://localhost:5173
+      DATABASE_URL: postgresql+asyncpg://analyzer:analyzer@postgres:5432/analyzer
       UPLOAD_DIR: /data/uploads
-      DB_PATH: /data/analyses.db
     volumes:
-      - analyzer-data:/data
+      - uploads-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
@@ -35,4 +52,5 @@ services:
       - backend
 
 volumes:
-  analyzer-data:
+  pg-data:
+  uploads-data:
