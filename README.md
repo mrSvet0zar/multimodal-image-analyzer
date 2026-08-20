@@ -5,7 +5,7 @@ téléverse une image et on récupère une analyse structurée : description, ob
 détectés, sentiment, tags et texte extrait. Les résultats s'exportent en JSON ou
 Markdown, et un panneau d'historique conserve les analyses récentes.
 
-**Stack :** FastAPI + Claude Vision d'Anthropic (backend) · React 18 + Vite (frontend)
+**Stack :** FastAPI + Claude Vision d'Anthropic (backend) · React 18 + **TypeScript** + Vite + **React Query** (frontend)
 
 [![CI](https://github.com/mrSvet0zar/multimodal-image-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mrSvet0zar/multimodal-image-analyzer/actions/workflows/ci.yml)
 
@@ -60,8 +60,11 @@ multimodal/
 │   ├── Dockerfile.local       # Image backend (docker compose ; Railway = Nixpacks)
 │   ├── ruff.toml · mypy.ini · pytest.ini
 │   └── requirements.txt · requirements-dev.txt
-├── frontend/
-│   ├── src/ (App.jsx, App.css, components/)
+├── frontend/                  # React 18 + TypeScript + React Query
+│   ├── src/
+│   │   ├── App.tsx · main.tsx · ErrorBoundary.tsx
+│   │   ├── api.ts · types.ts   # couche API typée + modèles
+│   │   └── components/*.tsx
 │   ├── Dockerfile             # build multi-stage → nginx
 │   └── package.json
 ├── .github/workflows/ci.yml   # Lint + types + tests + build

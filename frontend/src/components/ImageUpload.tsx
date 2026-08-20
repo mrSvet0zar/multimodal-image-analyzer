@@ -1,7 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import type { DetailLevel } from '../types';
 
-const LANGUAGES = [
+interface Props {
+  onUpload: (files: File[], detailLevel: DetailLevel, language: string) => void;
+  loading: boolean;
+}
+
+const LANGUAGES: { value: string; label: string }[] = [
   { value: 'en', label: 'English' },
   { value: 'fr', label: 'Français' },
   { value: 'es', label: 'Español' },
@@ -12,29 +18,29 @@ const LANGUAGES = [
   { value: 'zh', label: '中文' },
 ];
 
-export default function ImageUpload({ onUpload, loading }) {
-  const [detailLevel, setDetailLevel] = useState('medium');
+export default function ImageUpload({ onUpload, loading }: Props) {
+  const [detailLevel, setDetailLevel] = useState<DetailLevel>('medium');
   const [language, setLanguage] = useState('en');
-  const [previews, setPreviews] = useState([]);
+  const [previews, setPreviews] = useState<string[]>([]);
 
   const onDrop = useCallback(
-    (acceptedFiles) => {
+    (acceptedFiles: File[]) => {
       if (acceptedFiles.length === 0) return;
 
       Promise.all(
         acceptedFiles.map(
           (file) =>
-            new Promise((resolve) => {
+            new Promise<string>((resolve) => {
               const reader = new FileReader();
-              reader.onload = (e) => resolve(e.target.result);
+              reader.onload = (e) => resolve(e.target?.result as string);
               reader.readAsDataURL(file);
-            })
-        )
+            }),
+        ),
       ).then(setPreviews);
 
       onUpload(acceptedFiles, detailLevel, language);
     },
-    [onUpload, detailLevel, language]
+    [onUpload, detailLevel, language],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -52,7 +58,7 @@ export default function ImageUpload({ onUpload, loading }) {
           <select
             id="detail-level"
             value={detailLevel}
-            onChange={(e) => setDetailLevel(e.target.value)}
+            onChange={(e) => setDetailLevel(e.target.value as DetailLevel)}
             disabled={loading}
           >
             <option value="simple">Simple (quick)</option>

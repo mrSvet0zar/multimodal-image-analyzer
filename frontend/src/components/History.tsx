@@ -1,6 +1,21 @@
-import React, { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import type { Analysis } from '../types';
 
-export default function History({ images, apiUrl, onSelect, onDelete, activeId }) {
+interface Props {
+  images: Analysis[];
+  apiUrl: string;
+  onSelect: (analysis: Analysis) => void;
+  onDelete: (id: string) => void;
+  activeId?: string;
+}
+
+export default function History({
+  images,
+  apiUrl,
+  onSelect,
+  onDelete,
+  activeId,
+}: Props) {
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
@@ -11,7 +26,7 @@ export default function History({ images, apiUrl, onSelect, onDelete, activeId }
         img.filename,
         img.description,
         img.sentiment,
-        ...(img.tags || []),
+        ...img.tags,
       ]
         .join(' ')
         .toLowerCase();
@@ -53,21 +68,19 @@ export default function History({ images, apiUrl, onSelect, onDelete, activeId }
               <div className="history-meta">
                 <div className="history-filename">{img.filename}</div>
                 <div className="history-tags">
-                  {(img.tags || []).slice(0, 3).join(' · ')}
+                  {img.tags.slice(0, 3).join(' · ')}
                 </div>
               </div>
-              {onDelete && (
-                <button
-                  className="history-delete"
-                  title="Delete this analysis"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(img.id);
-                  }}
-                >
-                  ✕
-                </button>
-              )}
+              <button
+                className="history-delete"
+                title="Delete this analysis"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(img.id);
+                }}
+              >
+                ✕
+              </button>
             </li>
           ))}
         </ul>

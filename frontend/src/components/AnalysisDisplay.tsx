@@ -1,6 +1,14 @@
-import React from 'react';
+import type { Analysis, ExportFormat } from '../types';
 
-export default function AnalysisDisplay({ analysis, apiUrl, onExport }) {
+interface Props {
+  analysis: Analysis;
+  apiUrl: string;
+  onExport: (format: ExportFormat) => void;
+}
+
+export default function AnalysisDisplay({ analysis, apiUrl, onExport }: Props) {
+  const totalTokens = analysis.input_tokens + analysis.output_tokens;
+
   return (
     <div className="analysis-display">
       <div className="analysis-header">
@@ -22,7 +30,7 @@ export default function AnalysisDisplay({ analysis, apiUrl, onExport }) {
         <p>{analysis.description}</p>
       </div>
 
-      {analysis.objects?.length > 0 && (
+      {analysis.objects.length > 0 && (
         <div className="objects">
           <h3>Objects detected</h3>
           <div className="objects-grid">
@@ -48,12 +56,16 @@ export default function AnalysisDisplay({ analysis, apiUrl, onExport }) {
 
       <div className="sentiment">
         <h3>Sentiment</h3>
-        <p className={`sentiment-badge ${String(analysis.sentiment).toLowerCase().replace(/\s+/g, '-')}`}>
+        <p
+          className={`sentiment-badge ${analysis.sentiment
+            .toLowerCase()
+            .replace(/\s+/g, '-')}`}
+        >
           {analysis.sentiment}
         </p>
       </div>
 
-      {analysis.tags?.length > 0 && (
+      {analysis.tags.length > 0 && (
         <div className="tags">
           <h3>Tags</h3>
           <div className="tags-cloud">
@@ -75,13 +87,8 @@ export default function AnalysisDisplay({ analysis, apiUrl, onExport }) {
 
       <div className="metadata">
         <small>
-          Processed in {analysis.processing_time_ms?.toFixed(0)}ms
-          {analysis.input_tokens > 0 && (
-            <>
-              {' · '}
-              {(analysis.input_tokens + analysis.output_tokens).toLocaleString()} tokens
-            </>
-          )}
+          Processed in {analysis.processing_time_ms.toFixed(0)}ms
+          {totalTokens > 0 && <> · {totalTokens.toLocaleString()} tokens</>}
           {analysis.cost_usd > 0 && <> · ${analysis.cost_usd.toFixed(4)}</>}
         </small>
       </div>
