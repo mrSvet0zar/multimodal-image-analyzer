@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import sys
+from typing import Any
 
 from app.config import settings
 from app.vision_service import VisionAnalyzer
@@ -54,7 +55,7 @@ async def run(threshold: float, json_path: str | None) -> int:
         return 2
 
     analyzer = VisionAnalyzer()
-    results = []
+    results: list[dict[str, Any]] = []
     total_cost = 0.0
 
     print(f"\nRunning {len(CASES)} eval cases against {settings.vision_model}\n")

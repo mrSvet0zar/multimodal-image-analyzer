@@ -8,9 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- Anthropic / Vision ---
     anthropic_api_key: str = ""
@@ -31,6 +29,7 @@ class Settings(BaseSettings):
     db_path: str = "./analyses.db"
 
     # --- HTTP / limits ---
+    api_port: int = 8000
     cors_origins: str = "http://localhost:5173"
     rate_limit_max: int = 30
     rate_limit_window: int = 60

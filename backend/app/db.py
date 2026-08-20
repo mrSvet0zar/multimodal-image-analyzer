@@ -54,27 +54,21 @@ async def save_analysis(analysis: dict, file_path: str) -> None:
 
 async def get_all() -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT data FROM analyses ORDER BY uploaded_at DESC"
-        ) as cur:
+        async with db.execute("SELECT data FROM analyses ORDER BY uploaded_at DESC") as cur:
             rows = await cur.fetchall()
     return [json.loads(row[0]) for row in rows]
 
 
 async def get_one(image_id: str) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT data FROM analyses WHERE id = ?", (image_id,)
-        ) as cur:
+        async with db.execute("SELECT data FROM analyses WHERE id = ?", (image_id,)) as cur:
             row = await cur.fetchone()
     return json.loads(row[0]) if row else None
 
 
 async def get_file_path(image_id: str) -> str | None:
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT file_path FROM analyses WHERE id = ?", (image_id,)
-        ) as cur:
+        async with db.execute("SELECT file_path FROM analyses WHERE id = ?", (image_id,)) as cur:
             row = await cur.fetchone()
     return row[0] if row else None
 
@@ -94,6 +88,7 @@ async def get_metrics() -> dict:
         async with db.execute(query) as cur:
             row = await cur.fetchone()
 
+    assert row is not None  # the aggregate query always returns one row
     total, input_tokens, output_tokens, cost_usd, avg_ms = row
     return {
         "total_analyses": int(total),
@@ -107,9 +102,7 @@ async def get_metrics() -> dict:
 async def delete(image_id: str) -> str | None:
     """Delete a row. Returns the stored file_path if it existed, else None."""
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT file_path FROM analyses WHERE id = ?", (image_id,)
-        ) as cur:
+        async with db.execute("SELECT file_path FROM analyses WHERE id = ?", (image_id,)) as cur:
             row = await cur.fetchone()
         if row is None:
             return None

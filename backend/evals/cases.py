@@ -6,8 +6,8 @@ can score the model's output against it.
 """
 
 import io
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from PIL import Image, ImageDraw
 

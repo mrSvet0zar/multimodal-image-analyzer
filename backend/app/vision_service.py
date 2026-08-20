@@ -1,5 +1,6 @@
 import base64
-from typing import Any, AsyncIterator, Dict, Tuple
+from collections.abc import AsyncIterator
+from typing import Any
 
 import anthropic
 
@@ -24,7 +25,7 @@ DETAIL_DESC = {
 
 # Non-streaming path: a forced tool call guarantees a schema-valid object —
 # no fragile JSON scraping from free text.
-ANALYSIS_TOOL: Dict[str, Any] = {
+ANALYSIS_TOOL: dict[str, Any] = {
     "name": "record_image_analysis",
     "description": "Record the structured visual analysis of the image.",
     "strict": True,
@@ -114,7 +115,7 @@ class VisionAnalyzer:
         media_type: str = "image/jpeg",
         detail_level: str = "medium",
         language: str = "en",
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Analyze an image and return (structured_analysis, usage).
 
         Uses forced tool use so the analysis always matches the schema.
@@ -144,7 +145,7 @@ class VisionAnalyzer:
             ],
         )
 
-        data: Dict[str, Any] = {}
+        data: dict[str, Any] = {}
         for block in message.content:
             if block.type == "tool_use" and block.name == ANALYSIS_TOOL["name"]:
                 data = dict(block.input)
@@ -177,10 +178,7 @@ class VisionAnalyzer:
             "5-10 strings), extracted_text (string, empty if none)."
         )
         if language and language != "en":
-            prompt += (
-                f"\n\nWrite the description and all text values in this "
-                f"language: {language}."
-            )
+            prompt += f"\n\nWrite the description and all text values in this language: {language}."
 
         async with self.async_client.messages.stream(
             model=self.models[0],
@@ -201,7 +199,7 @@ class VisionAnalyzer:
             yield {"__usage__": usage_to_dict(final.usage)}
 
     @classmethod
-    def parse_stream_output(cls, full_text: str) -> Dict[str, Any]:
+    def parse_stream_output(cls, full_text: str) -> dict[str, Any]:
         """Split streamed text into description + structured fields."""
         if STREAM_MARKER in full_text:
             description, _, rest = full_text.partition(STREAM_MARKER)
@@ -219,7 +217,7 @@ class VisionAnalyzer:
         return data
 
     @staticmethod
-    def _parse_json(text: str) -> Dict[str, Any]:
+    def _parse_json(text: str) -> dict[str, Any]:
         """Extract the first JSON object from text (streaming tail fallback)."""
         import json
 

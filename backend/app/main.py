@@ -141,9 +141,7 @@ async def _process_upload(
     except anthropic.APIError as exc:
         file_path.unlink(missing_ok=True)
         logger.error("vision_api_error", error=str(exc))
-        raise HTTPException(
-            status_code=502, detail=f"Vision service error: {exc}"
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"Vision service error: {exc}") from exc
     processing_time = (time.time() - start_time) * 1000
 
     result = _build_result(image_id, filename, analysis_data, processing_time, usage)
@@ -357,9 +355,7 @@ async def analyze_stream(
 
         processing_time = (time.time() - start_time) * 1000
         analysis_data = VisionAnalyzer.parse_stream_output(full)
-        result = _build_result(
-            image_id, filename, analysis_data, processing_time, usage
-        )
+        result = _build_result(image_id, filename, analysis_data, processing_time, usage)
         await db.save_analysis(result.model_dump(mode="json"), str(file_path))
         logger.info(
             "image_analyzed",
@@ -444,31 +440,33 @@ async def export_analysis(image_id: str, format: str = "json"):
         return JSONResponse(data)
 
     if format == "markdown":
-        objects_md = "\n".join(
-            f"- {obj['name']} (confidence: {obj['confidence']:.0%})"
-            for obj in data["objects"]
-        ) or "_None detected_"
+        objects_md = (
+            "\n".join(
+                f"- {obj['name']} (confidence: {obj['confidence']:.0%})" for obj in data["objects"]
+            )
+            or "_None detected_"
+        )
         tags_md = ", ".join(data["tags"]) or "_None_"
-        md = f"""# Analysis: {data['filename']}
+        md = f"""# Analysis: {data["filename"]}
 
 ## Description
-{data['description']}
+{data["description"]}
 
 ## Objects Detected
 {objects_md}
 
 ## Sentiment
-{data['sentiment']}
+{data["sentiment"]}
 
 ## Tags
 {tags_md}
 
 ## Extracted Text
-{data['extracted_text'] or '_None_'}
+{data["extracted_text"] or "_None_"}
 
 ---
-*Analyzed at: {data['uploaded_at']}*
-*Processing time: {data['processing_time_ms']:.0f}ms*
+*Analyzed at: {data["uploaded_at"]}*
+*Processing time: {data["processing_time_ms"]:.0f}ms*
 """
         return JSONResponse({"markdown": md})
 
@@ -489,6 +487,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=int(os.getenv("API_PORT", 8000)),
+        port=settings.api_port,
         reload=True,
     )

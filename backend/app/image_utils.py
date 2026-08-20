@@ -27,7 +27,7 @@ def process_image(data: bytes, max_dim: int = MAX_DIMENSION) -> bytes:
         raise ValueError("Invalid or corrupt image file") from exc
 
     # ...then reopen for actual processing.
-    img = Image.open(io.BytesIO(data))
+    img: Image.Image = Image.open(io.BytesIO(data))
 
     if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
         img = img.convert("RGBA")
@@ -38,7 +38,7 @@ def process_image(data: bytes, max_dim: int = MAX_DIMENSION) -> bytes:
         img = img.convert("RGB")
 
     if max(img.size) > max_dim:
-        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+        img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
     buffer = io.BytesIO()
     img.save(buffer, format="JPEG", quality=JPEG_QUALITY)

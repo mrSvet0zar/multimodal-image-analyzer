@@ -1,12 +1,12 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional
 from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
 class AnalysisObject(BaseModel):
     name: str
     confidence: float
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class ImageAnalysis(BaseModel):
@@ -14,9 +14,9 @@ class ImageAnalysis(BaseModel):
     filename: str
     uploaded_at: datetime
     description: str
-    objects: List[AnalysisObject] = Field(default_factory=list)
+    objects: list[AnalysisObject] = Field(default_factory=list)
     sentiment: str = "neutral"
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     extracted_text: str = ""
     processing_time_ms: float = 0.0
     input_tokens: int = 0
@@ -38,4 +38,4 @@ class BatchAnalysisRequest(BaseModel):
 class BatchResult(BaseModel):
     total: int
     successful: int
-    results: List[dict]
+    results: list[dict]

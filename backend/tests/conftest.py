@@ -56,9 +56,7 @@ def client(tmp_path, monkeypatch):
     asyncio.run(db.init_db())
 
     mock = AsyncMock()
-    mock.analyze_image = AsyncMock(
-        return_value=(dict(SAMPLE_ANALYSIS), dict(SAMPLE_USAGE))
-    )
+    mock.analyze_image = AsyncMock(return_value=(dict(SAMPLE_ANALYSIS), dict(SAMPLE_USAGE)))
     monkeypatch.setattr(main, "vision_analyzer", mock)
 
     # No context manager -> lifespan doesn't run -> our mock stays in place.
