@@ -162,11 +162,16 @@ def test_analyze_video(client, video_bytes):
     assert res.status_code == 200
     data = res.json()
     assert data["filename"] == "clip.mp4"
-    assert data["description"] == "a test image"  # from the mocked analyzer
+    assert data["media_type"] == "video"
     assert data["cached"] is False
-    assert data["image_url"].startswith("/api/images/")
-    # The thumbnail frame is served.
+    assert data["video_url"] == f"/api/videos/{data['id']}"
+    # Both the thumbnail and the full video are served.
     assert client.get(data["image_url"]).status_code == 200
+    assert client.get(data["video_url"]).status_code == 200
+
+    # Deleting removes both stored objects.
+    assert client.delete(f"/api/analysis/{data['id']}").status_code == 200
+    assert client.get(data["video_url"]).status_code == 404
 
 
 def test_analyze_video_rejects_non_video(client):

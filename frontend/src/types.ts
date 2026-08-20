@@ -18,7 +18,10 @@ export interface Analysis {
   output_tokens: number;
   cost_usd: number;
   cached?: boolean;
+  media_type?: 'image' | 'video';
+  transcript?: string;
   image_url: string;
+  video_url?: string | null;
 }
 
 export interface BatchError {

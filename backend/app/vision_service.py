@@ -164,8 +164,9 @@ class VisionAnalyzer:
         frames: list[bytes],
         detail_level: str = "medium",
         language: str = "en",
+        transcript: str = "",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Analyze a video from sampled frames and return (analysis, usage)."""
+        """Analyze a video from sampled frames (+ optional transcript)."""
         desc = DETAIL_DESC.get(detail_level, DETAIL_DESC["medium"])
         content: list[dict] = []
         for i, frame in enumerate(frames):
@@ -179,6 +180,11 @@ class VisionAnalyzer:
             "(each with a confidence between 0 and 1), the overall sentiment/mood, 5-10 "
             "relevant tags, and any text visible (empty string if none)."
         )
+        if transcript:
+            instruction += (
+                f'\n\nThe audio transcript of the video is: "{transcript}". '
+                "Use it together with the frames to describe what happens."
+            )
         if language and language != "en":
             instruction += f"\n\nWrite all text values in this language: {language}."
         content.append({"type": "text", "text": instruction})

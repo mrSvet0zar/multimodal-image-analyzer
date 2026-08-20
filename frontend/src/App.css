@@ -549,7 +549,8 @@ body {
   text-align: center;
 }
 
-.analysis-image img {
+.analysis-image img,
+.analysis-image video {
   max-width: 100%;
   max-height: 360px;
   border-radius: var(--radius-sm);

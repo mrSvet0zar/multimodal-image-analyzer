@@ -40,8 +40,12 @@ class Analysis(Base):
     content_hash: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
     detail_level: Mapped[str | None] = mapped_column(String(32), default=None)
     language: Mapped[str | None] = mapped_column(String(16), default=None)
+    media_type: Mapped[str] = mapped_column(String(16), default="image")
+    video_path: Mapped[str | None] = mapped_column(String(1024), default=None)
+    transcript: Mapped[str | None] = mapped_column(Text, default=None)
 
     def to_dict(self) -> dict[str, Any]:
+        media_type = self.media_type or "image"
         return {
             "id": self.id,
             "filename": self.filename,
@@ -56,7 +60,10 @@ class Analysis(Base):
             "output_tokens": self.output_tokens,
             "cost_usd": self.cost_usd,
             "cached": False,
+            "media_type": media_type,
+            "transcript": self.transcript or "",
             "image_url": f"/api/images/{self.id}",
+            "video_url": f"/api/videos/{self.id}" if media_type == "video" else None,
         }
 
 
@@ -92,6 +99,9 @@ async def save_analysis(
     content_hash: str | None = None,
     detail_level: str | None = None,
     language: str | None = None,
+    media_type: str = "image",
+    video_path: str | None = None,
+    transcript: str | None = None,
 ) -> None:
     assert _sessionmaker is not None
     async with _sessionmaker() as session:
@@ -112,6 +122,9 @@ async def save_analysis(
             content_hash=content_hash,
             detail_level=detail_level,
             language=language,
+            media_type=media_type,
+            video_path=video_path,
+            transcript=transcript,
         )
         await session.merge(row)
         await session.commit()
@@ -153,6 +166,13 @@ async def get_file_path(image_id: str) -> str | None:
     async with _sessionmaker() as session:
         row = await session.get(Analysis, image_id)
         return row.file_path if row else None
+
+
+async def get_video_path(image_id: str) -> str | None:
+    assert _sessionmaker is not None
+    async with _sessionmaker() as session:
+        row = await session.get(Analysis, image_id)
+        return row.video_path if row else None
 
 
 async def get_metrics() -> dict:
@@ -200,14 +220,14 @@ async def get_daily_metrics(limit_days: int = 14) -> list[dict]:
     ]
 
 
-async def delete(image_id: str) -> str | None:
-    """Delete a row. Returns the stored file_path if it existed, else None."""
+async def delete(image_id: str) -> dict | None:
+    """Delete a row. Returns its stored file/video paths, or None if missing."""
     assert _sessionmaker is not None
     async with _sessionmaker() as session:
         row = await session.get(Analysis, image_id)
         if row is None:
             return None
-        file_path = row.file_path
+        paths = {"file_path": row.file_path, "video_path": row.video_path}
         await session.execute(sa_delete(Analysis).where(Analysis.id == image_id))
         await session.commit()
-        return file_path
+        return paths

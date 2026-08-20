@@ -28,6 +28,10 @@ class Storage(ABC):
     async def delete(self, location: str) -> None:
         """Remove the object (no error if already gone)."""
 
+    async def presigned_url(self, location: str) -> str | None:
+        """A time-limited direct URL (S3/R2), or None to serve via the backend."""
+        return None
+
 
 class LocalStorage(Storage):
     def __init__(self, base_dir: str | Path):
@@ -111,6 +115,16 @@ class S3Storage(Storage):
 
     async def delete(self, location: str) -> None:
         await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=location)
+
+    async def presigned_url(self, location: str) -> str | None:
+        def _gen() -> str:
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": location},
+                ExpiresIn=3600,
+            )
+
+        return await asyncio.to_thread(_gen)
 
 
 def get_storage() -> Storage:

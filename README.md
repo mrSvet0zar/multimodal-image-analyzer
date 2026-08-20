@@ -24,7 +24,8 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 🖱️ Téléversement par glisser-déposer (JPEG, PNG, GIF, WebP)
 - 🎚️ Trois niveaux de détail : simple / medium / detailed
 - 🧠 **Sortie structurée garantie** via tool-use Claude (schéma strict, pas de parsing fragile)
-- 🎥 **Analyse vidéo** : extraction de frames (OpenCV) → Claude raisonne sur la séquence
+- 🎥 **Analyse vidéo** : extraction de frames (OpenCV) → Claude raisonne sur la séquence,
+  vidéo stockée + rejouable, **transcription audio** (Whisper) intégrée à l'analyse
 - ⚡ Streaming en temps réel (SSE) : la description s'affiche au fil de l'eau
 - 🏷️ Objets avec score de confiance, sentiment, tags, texte extrait
 - 🌍 Analyse dans 8 langues (sélecteur dans l'UI)
@@ -165,7 +166,8 @@ Backend + frontend + volume de données, puis http://localhost:5173.
 | GET     | `/api/history`               | Lister les images analysées (récentes)   |
 | GET     | `/api/metrics`               | Métriques agrégées (analyses, tokens, coût) |
 | GET     | `/api/analysis/{id}`         | Métadonnées d'analyse d'une image        |
-| GET     | `/api/images/{id}`           | Servir l'image téléversée brute          |
+| GET     | `/api/images/{id}`           | Servir l'image (ou la vignette vidéo)    |
+| GET     | `/api/videos/{id}`           | Servir/rejouer la vidéo (URL pré-signée) |
 | GET     | `/api/export/{id}?format=`   | Exporter l'analyse (`json` / `markdown`) |
 | GET     | `/health`                    | Vérification de l'état                    |
 

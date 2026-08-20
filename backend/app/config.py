@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # --- Anthropic / Vision ---
     anthropic_api_key: str = ""
     vision_model: str = "claude-sonnet-5"
+
+    # --- Audio transcription (OpenAI Whisper; empty key disables it) ---
+    openai_api_key: str = ""
+    whisper_model: str = "whisper-1"
     # Optional model to try if the primary is overloaded/unavailable.
     vision_fallback_model: str = ""
     request_timeout: float = 60.0

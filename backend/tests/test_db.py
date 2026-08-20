@@ -60,8 +60,8 @@ async def test_delete_returns_path_and_removes(temp_db):
     await temp_db.init_db()
     await temp_db.save_analysis(SAMPLE, "./uploads/abc123.png")
 
-    path = await temp_db.delete("abc123")
-    assert path == "./uploads/abc123.png"
+    paths = await temp_db.delete("abc123")
+    assert paths == {"file_path": "./uploads/abc123.png", "video_path": None}
     assert await temp_db.get_one("abc123") is None
 
 

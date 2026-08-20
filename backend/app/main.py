@@ -10,9 +10,15 @@ import anthropic
 import structlog
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import (
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 
 from app import db
+from app.audio import transcribe_audio
 from app.config import settings
 from app.cost_guard import CostGuard, InMemoryCostGuard, RedisCostGuard
 from app.image_utils import process_image
@@ -243,6 +249,8 @@ def _build_result(
     analysis_data: dict,
     processing_time: float,
     usage: dict | None = None,
+    media_type: str = "image",
+    transcript: str = "",
 ) -> ImageAnalysis:
     usage = usage or {}
     return ImageAnalysis(
@@ -258,7 +266,10 @@ def _build_result(
         input_tokens=int(usage.get("input_tokens", 0)),
         output_tokens=int(usage.get("output_tokens", 0)),
         cost_usd=float(usage.get("cost_usd", 0.0)),
+        media_type=media_type,
+        transcript=transcript,
         image_url=f"/api/images/{image_id}",
+        video_url=f"/api/videos/{image_id}" if media_type == "video" else None,
     )
 
 
@@ -356,27 +367,47 @@ async def analyze_video(
 
     filename = file.filename or "video"
     image_id = str(uuid.uuid4())
-    # Store the thumbnail frame as the served image (history preview).
-    location = await storage.save(f"{image_id}.jpg", thumbnail, "image/jpeg")
+    extension = filename.rsplit(".", 1)[-1] if "." in filename else "mp4"
+
+    # Store the thumbnail (history preview) and the full video (replay).
+    thumb_location = await storage.save(f"{image_id}.jpg", thumbnail, "image/jpeg")
+    video_location = await storage.save(
+        f"{image_id}.{extension}", content, file.content_type or "video/mp4"
+    )
+
+    # Transcribe the audio (best-effort; empty without OPENAI_API_KEY).
+    transcript = await transcribe_audio(content, filename)
 
     start_time = time.time()
     try:
         analysis_data, usage = await _get_analyzer().analyze_video(
-            frames, detail_level=detail_level, language=language
+            frames, detail_level=detail_level, language=language, transcript=transcript
         )
     except anthropic.APIError as exc:
-        await storage.delete(location)
+        await storage.delete(thumb_location)
+        await storage.delete(video_location)
         logger.error("vision_api_error", error=str(exc), kind="video")
         raise HTTPException(status_code=502, detail=f"Vision service error: {exc}") from exc
     processing_time = (time.time() - start_time) * 1000
 
-    result = _build_result(image_id, filename, analysis_data, processing_time, usage)
+    result = _build_result(
+        image_id,
+        filename,
+        analysis_data,
+        processing_time,
+        usage,
+        media_type="video",
+        transcript=transcript,
+    )
     await db.save_analysis(
         result.model_dump(mode="json"),
-        location,
+        thumb_location,
         content_hash=content_hash,
         detail_level=detail_level,
         language=language,
+        media_type="video",
+        video_path=video_location,
+        transcript=transcript,
     )
     await cost_guard.add(usage["cost_usd"])
 
@@ -580,17 +611,19 @@ async def get_analysis(image_id: str):
 
 @app.delete("/api/analysis/{image_id}")
 async def delete_analysis(image_id: str):
-    """Delete an analysis and its stored image file."""
-    location = await db.delete(image_id)
-    if location is None:
+    """Delete an analysis and its stored image/video files."""
+    paths = await db.delete(image_id)
+    if paths is None:
         raise HTTPException(status_code=404, detail="Image not found")
-    await storage.delete(location)
+    await storage.delete(paths["file_path"])
+    if paths.get("video_path"):
+        await storage.delete(paths["video_path"])
     return {"deleted": image_id}
 
 
 @app.get("/api/images/{image_id}")
 async def get_image_file(image_id: str):
-    """Serve the raw uploaded image so the frontend can display it."""
+    """Serve the raw uploaded image (or a video's thumbnail) for display."""
     location = await db.get_file_path(image_id)
     if location is None:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -599,6 +632,24 @@ async def get_image_file(image_id: str):
         raise HTTPException(status_code=404, detail="Image not found")
     data, content_type = loaded
     return Response(content=data, media_type=content_type)
+
+
+@app.get("/api/videos/{image_id}")
+async def get_video_file(image_id: str):
+    """Serve the stored video — redirect to a presigned URL (S3/R2) or stream it."""
+    location = await db.get_video_path(image_id)
+    if location is None:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    presigned = await storage.presigned_url(location)
+    if presigned:
+        return RedirectResponse(url=presigned, status_code=307)
+
+    loaded = await storage.load(location)
+    if loaded is None:
+        raise HTTPException(status_code=404, detail="Video not found")
+    data, content_type = loaded
+    return Response(content=data, media_type=content_type or "video/mp4")
 
 
 # ============ Export ============

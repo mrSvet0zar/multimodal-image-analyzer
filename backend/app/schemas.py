@@ -23,7 +23,10 @@ class ImageAnalysis(BaseModel):
     output_tokens: int = 0
     cost_usd: float = 0.0
     cached: bool = False
+    media_type: str = "image"  # "image" or "video"
+    transcript: str = ""
     image_url: str
+    video_url: str | None = None
 
 
 class AnalysisRequest(BaseModel):

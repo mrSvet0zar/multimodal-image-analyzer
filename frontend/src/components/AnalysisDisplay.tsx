@@ -19,10 +19,20 @@ export default function AnalysisDisplay({ analysis, apiUrl, onExport }: Props) {
         </div>
       </div>
 
-      {analysis.image_url && (
+      {analysis.media_type === 'video' && analysis.video_url ? (
         <div className="analysis-image">
-          <img src={`${apiUrl}${analysis.image_url}`} alt={analysis.filename} />
+          <video
+            src={`${apiUrl}${analysis.video_url}`}
+            poster={`${apiUrl}${analysis.image_url}`}
+            controls
+          />
         </div>
+      ) : (
+        analysis.image_url && (
+          <div className="analysis-image">
+            <img src={`${apiUrl}${analysis.image_url}`} alt={analysis.filename} />
+          </div>
+        )
       )}
 
       <div className="description">
@@ -82,6 +92,13 @@ export default function AnalysisDisplay({ analysis, apiUrl, onExport }: Props) {
         <div className="extracted-text">
           <h3>Extracted text</h3>
           <p>{analysis.extracted_text}</p>
+        </div>
+      )}
+
+      {analysis.transcript && (
+        <div className="extracted-text">
+          <h3>🎙️ Transcript</h3>
+          <p>{analysis.transcript}</p>
         </div>
       )}
 
