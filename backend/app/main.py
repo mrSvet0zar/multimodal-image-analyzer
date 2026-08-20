@@ -13,9 +13,11 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app import db
 from app.config import settings
+from app.cost_guard import CostGuard, InMemoryCostGuard, RedisCostGuard
 from app.image_utils import process_image
 from app.logging_setup import configure_logging, logger
-from app.rate_limit import RateLimiter, client_key
+from app.rate_limit import InMemoryLimiter, Limiter, RedisLimiter, client_key
+from app.redis_client import get_redis
 from app.schemas import AnalysisObject, ImageAnalysis
 from app.storage import get_storage
 from app.vision_service import (
@@ -28,11 +30,22 @@ MAX_FILE_SIZE = settings.max_file_size
 
 vision_analyzer: VisionAnalyzer | None = None
 storage = get_storage()
-analyze_limiter = RateLimiter(settings.rate_limit_max, settings.rate_limit_window)
+
+_redis = get_redis()
+analyze_limiter: Limiter = (
+    RedisLimiter(_redis, settings.rate_limit_max, settings.rate_limit_window)
+    if _redis is not None
+    else InMemoryLimiter(settings.rate_limit_max, settings.rate_limit_window)
+)
+cost_guard: CostGuard = (
+    RedisCostGuard(_redis, settings.daily_cost_limit_usd)
+    if _redis is not None
+    else InMemoryCostGuard(settings.daily_cost_limit_usd)
+)
 
 
 async def rate_limit(request: Request) -> None:
-    analyze_limiter.check(client_key(request))
+    await analyze_limiter.check(client_key(request))
 
 
 @asynccontextmanager
@@ -120,6 +133,8 @@ async def _process_upload(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    await cost_guard.check()
+
     image_id = str(uuid.uuid4())
     extension = filename.rsplit(".", 1)[-1] if "." in filename else "img"
 
@@ -144,6 +159,7 @@ async def _process_upload(
 
     result = _build_result(image_id, filename, analysis_data, processing_time, usage)
     await db.save_analysis(result.model_dump(mode="json"), location)
+    await cost_guard.add(usage["cost_usd"])
 
     logger.info(
         "image_analyzed",
@@ -291,6 +307,8 @@ async def analyze_stream(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    await cost_guard.check()
+
     analyzer = _get_analyzer()
     filename = file.filename or "image"
     image_id = str(uuid.uuid4())
@@ -357,6 +375,7 @@ async def analyze_stream(
         analysis_data = VisionAnalyzer.parse_stream_output(full)
         result = _build_result(image_id, filename, analysis_data, processing_time, usage)
         await db.save_analysis(result.model_dump(mode="json"), location)
+        await cost_guard.add(usage.get("cost_usd", 0.0))
         logger.info(
             "image_analyzed",
             image_id=image_id,

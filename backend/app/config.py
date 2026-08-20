@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     rate_limit_max: int = 30
     rate_limit_window: int = 60
 
+    # Distributed rate limit + shared cost guard (falls back to in-memory if unset).
+    redis_url: str = ""
+    # Global daily spend cap in USD; 0 disables the guard.
+    daily_cost_limit_usd: float = 0.0
+
     # --- Logging ---
     log_level: str = "INFO"
 

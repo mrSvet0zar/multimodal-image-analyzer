@@ -26,6 +26,20 @@ def test_analyze_image_ok(client, png_bytes):
     assert data["cost_usd"] == 0.00105
 
 
+def test_cost_guard_blocks_endpoint(client, png_bytes, monkeypatch):
+    from app import main
+    from app.cost_guard import InMemoryCostGuard
+
+    # Sample usage costs $0.00105; a $0.001 daily cap blocks the 2nd analysis.
+    monkeypatch.setattr(main, "cost_guard", InMemoryCostGuard(0.001))
+
+    first = client.post("/api/analyze/image", files={"file": ("a.png", png_bytes, "image/png")})
+    assert first.status_code == 200
+
+    second = client.post("/api/analyze/image", files={"file": ("b.png", png_bytes, "image/png")})
+    assert second.status_code == 429
+
+
 def test_metrics(client, png_bytes):
     assert client.get("/api/metrics").json()["total_analyses"] == 0
 

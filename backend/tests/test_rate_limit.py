@@ -1,27 +1,41 @@
+"""Rate limiter tests — in-memory and Redis (via fakeredis)."""
+
+import fakeredis.aioredis
 import pytest
 from fastapi import HTTPException
 
-from app.rate_limit import RateLimiter
+from app.rate_limit import InMemoryLimiter, RedisLimiter
 
 
-def test_allows_up_to_limit():
-    limiter = RateLimiter(max_requests=3, window_seconds=60)
+async def test_inmemory_allows_up_to_limit():
+    limiter = InMemoryLimiter(max_requests=3, window_seconds=60)
     for _ in range(3):
-        limiter.check("1.2.3.4")  # should not raise
+        await limiter.check("1.2.3.4")  # should not raise
 
 
-def test_blocks_over_limit():
-    limiter = RateLimiter(max_requests=2, window_seconds=60)
-    limiter.check("1.2.3.4")
-    limiter.check("1.2.3.4")
+async def test_inmemory_blocks_over_limit():
+    limiter = InMemoryLimiter(max_requests=2, window_seconds=60)
+    await limiter.check("1.2.3.4")
+    await limiter.check("1.2.3.4")
     with pytest.raises(HTTPException) as exc:
-        limiter.check("1.2.3.4")
+        await limiter.check("1.2.3.4")
     assert exc.value.status_code == 429
 
 
-def test_limits_are_per_key():
-    limiter = RateLimiter(max_requests=1, window_seconds=60)
-    limiter.check("client-a")
-    limiter.check("client-b")  # different key, still allowed
+async def test_inmemory_per_key():
+    limiter = InMemoryLimiter(max_requests=1, window_seconds=60)
+    await limiter.check("client-a")
+    await limiter.check("client-b")  # different key, still allowed
     with pytest.raises(HTTPException):
-        limiter.check("client-a")
+        await limiter.check("client-a")
+
+
+async def test_redis_limiter_blocks_over_limit():
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    limiter = RedisLimiter(redis, max_requests=2, window_seconds=60)
+    await limiter.check("k")
+    await limiter.check("k")
+    with pytest.raises(HTTPException) as exc:
+        await limiter.check("k")
+    assert exc.value.status_code == 429
+    await limiter.check("other-key")  # different key, allowed

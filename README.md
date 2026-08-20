@@ -31,7 +31,8 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 🔍 Recherche/filtre dans l'historique
 - 📤 Export en JSON ou Markdown
 - 🕑 Historique **persistant** (SQLite) avec vignettes
-- 🛡️ Validation + redimensionnement d'image (Pillow), rate limiting par IP
+- 🛡️ Validation + redimensionnement d'image (Pillow), rate limiting distribué (Redis)
+- 💰 Garde-fou de coût quotidien (protège le budget API sur un endpoint public)
 - 🔁 **Résilience** : retries/backoff + timeout + modèle de fallback
 - 📊 **Observabilité** : tokens & coût par appel, logs JSON avec request-id, `/api/metrics`
 - ✅ **Évaluations** : dataset golden + scoring automatisé avec seuil
@@ -52,7 +53,9 @@ multimodal/
 │   │   ├── cost.py            # Estimation tokens/coût
 │   │   ├── logging_setup.py   # Logs JSON structurés (structlog)
 │   │   ├── image_utils.py     # Validation + redimensionnement (Pillow)
-│   │   ├── rate_limit.py      # Rate limiting par IP
+│   │   ├── rate_limit.py      # Rate limiting (mémoire ou Redis)
+│   │   ├── cost_guard.py      # Plafond de dépense quotidien (Redis)
+│   │   ├── redis_client.py    # Client Redis async partagé
 │   │   ├── db.py             # Persistance SQLAlchemy (SQLite/Postgres) + métriques
 │   │   ├── storage.py         # Stockage images : local ou S3/R2
 │   │   └── schemas.py         # Modèles Pydantic
@@ -174,6 +177,9 @@ Paramètres de requête pour l'analyse : `detail_level` (`simple`|`medium`|`deta
 - **Stockage objet** — abstraction `Storage` ([storage.py](backend/app/storage.py)) :
   disque local (dev) *ou* **S3 / Cloudflare R2** (prod) selon `S3_BUCKET`. Combiné
   à Postgres, le backend devient **stateless → scalable horizontalement**.
+- **Protection abus/coût** — rate limiting **distribué via Redis** (partagé entre
+  instances) + **garde-fou de dépense quotidienne** (`DAILY_COST_LIMIT_USD`) qui
+  protège le budget Claude sur un endpoint public. Retombe en mémoire sans Redis.
 
 ### Évaluations (evals)
 
@@ -208,6 +214,14 @@ disponibles (`pre-commit install`).
 > ⚠️ Railway (Root Directory = `backend`) construit un `backend/Dockerfile` s'il
 > en trouve un, au lieu d'utiliser Nixpacks. L'image Docker locale est donc
 > nommée `Dockerfile.local` — ne pas la renommer en `Dockerfile`.
+
+### Redis (rate-limit distribué + garde-fou coût)
+
+1. Projet Railway → **New** → **Database** → **Add Redis**.
+2. Service backend → **Variables** → `REDIS_URL` = `${{Redis.REDIS_URL}}`.
+3. (optionnel) `DAILY_COST_LIMIT_USD` = un plafond quotidien (ex. `2.0`).
+
+Sans `REDIS_URL`, le rate-limit reste en mémoire (mono-instance).
 
 ### Base Postgres (Railway)
 
