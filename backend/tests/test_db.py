@@ -41,6 +41,21 @@ async def test_get_all_orders_recent_first(temp_db):
     assert [r["id"] for r in rows] == ["new", "old"]
 
 
+async def test_find_by_hash(temp_db):
+    await temp_db.init_db()
+    await temp_db.save_analysis(
+        SAMPLE, "p", content_hash="abc", detail_level="medium", language="en"
+    )
+
+    hit = await temp_db.find_by_hash("abc", "medium", "en")
+    assert hit is not None
+    assert hit["id"] == SAMPLE["id"]
+
+    # Different detail level or hash -> no match.
+    assert await temp_db.find_by_hash("abc", "detailed", "en") is None
+    assert await temp_db.find_by_hash("nope", "medium", "en") is None
+
+
 async def test_delete_returns_path_and_removes(temp_db):
     await temp_db.init_db()
     await temp_db.save_analysis(SAMPLE, "./uploads/abc123.png")

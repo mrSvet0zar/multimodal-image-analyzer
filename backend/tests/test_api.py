@@ -43,18 +43,42 @@ def test_analyze_image_ok(client, png_bytes):
     assert data["cost_usd"] == 0.00105
 
 
-def test_cost_guard_blocks_endpoint(client, png_bytes, monkeypatch):
+def test_cost_guard_blocks_endpoint(client, monkeypatch):
     from app import main
     from app.cost_guard import InMemoryCostGuard
+    from tests.conftest import make_image_bytes
 
     # Sample usage costs $0.00105; a $0.001 daily cap blocks the 2nd analysis.
     monkeypatch.setattr(main, "cost_guard", InMemoryCostGuard(0.001))
 
-    first = client.post("/api/analyze/image", files={"file": ("a.png", png_bytes, "image/png")})
+    # Two DISTINCT images so the second isn't served from the dedup cache.
+    img_a = make_image_bytes(color=(10, 20, 30))
+    img_b = make_image_bytes(color=(200, 100, 50))
+
+    first = client.post("/api/analyze/image", files={"file": ("a.png", img_a, "image/png")})
     assert first.status_code == 200
 
-    second = client.post("/api/analyze/image", files={"file": ("b.png", png_bytes, "image/png")})
+    second = client.post("/api/analyze/image", files={"file": ("b.png", img_b, "image/png")})
     assert second.status_code == 429
+
+
+def test_image_cache_dedup(client, png_bytes):
+    from app import main
+
+    first = client.post(
+        "/api/analyze/image", files={"file": ("a.png", png_bytes, "image/png")}
+    ).json()
+    assert first["cached"] is False
+
+    # Same bytes + same detail/language -> served from cache, no second API call.
+    second = client.post(
+        "/api/analyze/image", files={"file": ("a.png", png_bytes, "image/png")}
+    ).json()
+    assert second["cached"] is True
+    assert second["id"] == first["id"]
+
+    assert main.vision_analyzer.analyze_image.call_count == 1
+    assert len(client.get("/api/history").json()) == 1  # no duplicate record
 
 
 def test_metrics(client, png_bytes):

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import time
 import uuid
@@ -143,6 +144,14 @@ async def _process_upload(
             detail="Invalid image format. Supported: JPEG, PNG, GIF, WebP",
         )
 
+    # Dedup: identical bytes + same detail level/language reuse the analysis.
+    content_hash = hashlib.sha256(content).hexdigest()
+    cached = await db.find_by_hash(content_hash, detail_level, language)
+    if cached is not None:
+        cached["cached"] = True
+        logger.info("cache_hit", image_id=cached["id"], streaming=False)
+        return ImageAnalysis(**cached)
+
     # Validate + normalize (resize/re-encode) off the event loop.
     try:
         api_bytes = await asyncio.to_thread(process_image, content)
@@ -174,7 +183,13 @@ async def _process_upload(
     processing_time = (time.time() - start_time) * 1000
 
     result = _build_result(image_id, filename, analysis_data, processing_time, usage)
-    await db.save_analysis(result.model_dump(mode="json"), location)
+    await db.save_analysis(
+        result.model_dump(mode="json"),
+        location,
+        content_hash=content_hash,
+        detail_level=detail_level,
+        language=language,
+    )
     await cost_guard.add(usage["cost_usd"])
 
     logger.info(
@@ -318,6 +333,33 @@ async def analyze_stream(
             status_code=400,
             detail="Invalid image format. Supported: JPEG, PNG, GIF, WebP",
         )
+
+    # Cache hit: stream the existing analysis without calling Claude.
+    content_hash = hashlib.sha256(content).hexdigest()
+    cached = await db.find_by_hash(content_hash, detail_level, language)
+    if cached is not None:
+        cached["cached"] = True
+        logger.info("cache_hit", image_id=cached["id"], streaming=True)
+
+        async def cached_stream():
+            yield _sse(
+                {
+                    "type": "start",
+                    "id": cached["id"],
+                    "filename": cached["filename"],
+                    "image_url": cached["image_url"],
+                }
+            )
+            if cached["description"]:
+                yield _sse({"type": "delta", "text": cached["description"]})
+            yield _sse({"type": "complete", "analysis": cached})
+
+        return StreamingResponse(
+            cached_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     try:
         api_bytes = await asyncio.to_thread(process_image, content)
     except ValueError as exc:
@@ -390,7 +432,13 @@ async def analyze_stream(
         processing_time = (time.time() - start_time) * 1000
         analysis_data = VisionAnalyzer.parse_stream_output(full)
         result = _build_result(image_id, filename, analysis_data, processing_time, usage)
-        await db.save_analysis(result.model_dump(mode="json"), location)
+        await db.save_analysis(
+            result.model_dump(mode="json"),
+            location,
+            content_hash=content_hash,
+            detail_level=detail_level,
+            language=language,
+        )
         await cost_guard.add(usage.get("cost_usd", 0.0))
         logger.info(
             "image_analyzed",

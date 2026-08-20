@@ -36,6 +36,10 @@ class Analysis(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    # Dedup key: identical bytes + same detail level + language reuse the analysis.
+    content_hash: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
+    detail_level: Mapped[str | None] = mapped_column(String(32), default=None)
+    language: Mapped[str | None] = mapped_column(String(16), default=None)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -51,6 +55,7 @@ class Analysis(Base):
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "cost_usd": self.cost_usd,
+            "cached": False,
             "image_url": f"/api/images/{self.id}",
         }
 
@@ -81,7 +86,13 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def save_analysis(analysis: dict, file_path: str) -> None:
+async def save_analysis(
+    analysis: dict,
+    file_path: str,
+    content_hash: str | None = None,
+    detail_level: str | None = None,
+    language: str | None = None,
+) -> None:
     assert _sessionmaker is not None
     async with _sessionmaker() as session:
         row = Analysis(
@@ -98,9 +109,29 @@ async def save_analysis(analysis: dict, file_path: str) -> None:
             input_tokens=analysis.get("input_tokens", 0),
             output_tokens=analysis.get("output_tokens", 0),
             cost_usd=analysis.get("cost_usd", 0.0),
+            content_hash=content_hash,
+            detail_level=detail_level,
+            language=language,
         )
         await session.merge(row)
         await session.commit()
+
+
+async def find_by_hash(content_hash: str, detail_level: str, language: str) -> dict | None:
+    """Return a prior analysis of identical bytes + same detail level + language."""
+    assert _sessionmaker is not None
+    async with _sessionmaker() as session:
+        result = await session.execute(
+            select(Analysis)
+            .where(
+                Analysis.content_hash == content_hash,
+                Analysis.detail_level == detail_level,
+                Analysis.language == language,
+            )
+            .limit(1)
+        )
+        row = result.scalars().first()
+        return row.to_dict() if row else None
 
 
 async def get_all() -> list[dict]:

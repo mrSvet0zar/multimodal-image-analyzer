@@ -17,6 +17,7 @@ export interface Analysis {
   input_tokens: number;
   output_tokens: number;
   cost_usd: number;
+  cached?: boolean;
   image_url: string;
 }
 

@@ -685,6 +685,18 @@ body {
   margin-top: 24px;
   color: var(--text-muted);
   font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cached-badge {
+  background: var(--success-bg);
+  color: var(--success-fg);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 600;
 }
 
 /* ============ History ============ */

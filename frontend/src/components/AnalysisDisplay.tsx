@@ -91,6 +91,7 @@ export default function AnalysisDisplay({ analysis, apiUrl, onExport }: Props) {
           {totalTokens > 0 && <> · {totalTokens.toLocaleString()} tokens</>}
           {analysis.cost_usd > 0 && <> · ${analysis.cost_usd.toFixed(4)}</>}
         </small>
+        {analysis.cached && <span className="cached-badge">⚡ cached · no API call</span>}
       </div>
     </div>
   );
