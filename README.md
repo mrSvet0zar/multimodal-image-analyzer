@@ -37,6 +37,7 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 📊 **Observabilité** : tokens & coût par appel, logs JSON avec request-id, `/api/metrics`
 - 📈 **Dashboard d'usage** dans l'UI (tuiles KPI + graphe par jour)
 - ✅ **Évaluations** : dataset golden + scoring automatisé avec seuil
+- ⚡ **Cache par hash** : une image identique re-soumise n'appelle pas Claude (dédup)
 - 🌙 Dark mode (persistant, suit la préférence système) + micro-animations
 - 🧪 Tests backend (pytest) **et frontend** (Vitest + Playwright E2E), lint **ruff**
   + types **mypy**, **CI GitHub Actions**, **Docker**
