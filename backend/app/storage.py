@@ -67,16 +67,27 @@ class S3Storage(Storage):
         access_key_id: str = "",
         secret_access_key: str = "",
     ):
-        import boto3
-
         self.bucket = bucket
-        self.client = boto3.client(
-            "s3",
-            region_name=region or None,
-            endpoint_url=endpoint_url or None,
-            aws_access_key_id=access_key_id or None,
-            aws_secret_access_key=secret_access_key or None,
-        )
+        self._endpoint_url = endpoint_url
+        self._region = region
+        self._access_key_id = access_key_id
+        self._secret_access_key = secret_access_key
+        self._client = None
+
+    @property
+    def client(self):
+        # Created lazily so a storage misconfiguration can't crash app import.
+        if self._client is None:
+            import boto3
+
+            self._client = boto3.client(
+                "s3",
+                region_name=self._region or None,
+                endpoint_url=self._endpoint_url or None,
+                aws_access_key_id=self._access_key_id or None,
+                aws_secret_access_key=self._secret_access_key or None,
+            )
+        return self._client
 
     async def save(self, key: str, data: bytes, content_type: str) -> str:
         await asyncio.to_thread(

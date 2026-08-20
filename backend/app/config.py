@@ -4,6 +4,7 @@ Single source of truth for config — reads environment variables and a local
 `.env` file. Import `settings` anywhere instead of scattering `os.getenv`.
 """
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,8 +37,15 @@ class Settings(BaseSettings):
     s3_bucket: str = ""
     s3_endpoint_url: str = ""  # e.g. https://<account>.r2.cloudflarestorage.com
     s3_region: str = "auto"
-    s3_access_key_id: str = ""
-    s3_secret_access_key: str = ""
+    # Accept both S3_ACCESS_KEY_ID and the shorter S3_ACCESS_KEY people often set.
+    s3_access_key_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("s3_access_key_id", "s3_access_key"),
+    )
+    s3_secret_access_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("s3_secret_access_key", "s3_secret_key"),
+    )
 
     # --- HTTP / limits ---
     api_port: int = 8000
