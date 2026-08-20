@@ -35,6 +35,7 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 💰 Garde-fou de coût quotidien (protège le budget API sur un endpoint public)
 - 🔁 **Résilience** : retries/backoff + timeout + modèle de fallback
 - 📊 **Observabilité** : tokens & coût par appel, logs JSON avec request-id, `/api/metrics`
+- 📈 **Dashboard d'usage** dans l'UI (tuiles KPI + graphe par jour)
 - ✅ **Évaluations** : dataset golden + scoring automatisé avec seuil
 - 🌙 Dark mode (persistant, suit la préférence système) + micro-animations
 - 🧪 Tests backend (pytest) **et frontend** (Vitest + Playwright E2E), lint **ruff**
