@@ -147,6 +147,28 @@ async def get_metrics() -> dict:
     }
 
 
+async def get_daily_metrics(limit_days: int = 14) -> list[dict]:
+    """Per-day analysis count and cost (most recent `limit_days`, chronological)."""
+    assert _sessionmaker is not None
+    day = func.substr(Analysis.uploaded_at, 1, 10)
+    async with _sessionmaker() as session:
+        result = await session.execute(
+            select(
+                day.label("day"),
+                func.count(Analysis.id),
+                func.coalesce(func.sum(Analysis.cost_usd), 0.0),
+            )
+            .group_by(day)
+            .order_by(day.desc())
+            .limit(limit_days)
+        )
+        rows = result.all()
+
+    return [
+        {"day": r[0], "count": int(r[1]), "cost_usd": round(float(r[2]), 6)} for r in reversed(rows)
+    ]
+
+
 async def delete(image_id: str) -> str | None:
     """Delete a row. Returns the stored file_path if it existed, else None."""
     assert _sessionmaker is not None

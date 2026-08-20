@@ -70,6 +70,9 @@ def test_metrics(client, png_bytes):
     assert metrics["total_input_tokens"] == 100
     assert metrics["total_output_tokens"] == 50
     assert round(metrics["total_cost_usd"], 5) == 0.00105
+    assert isinstance(metrics["by_day"], list)
+    assert len(metrics["by_day"]) == 1
+    assert metrics["by_day"][0]["count"] == 1
 
 
 def test_analyze_rejects_non_image(client):

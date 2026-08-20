@@ -424,9 +424,10 @@ async def get_history():
 
 @app.get("/api/metrics")
 async def get_metrics():
-    """Aggregate usage metrics: total analyses, tokens, cost, avg latency."""
+    """Aggregate usage metrics + per-day breakdown for the dashboard."""
     metrics = await db.get_metrics()
     metrics["model"] = settings.vision_model
+    metrics["by_day"] = await db.get_daily_metrics()
     return metrics
 
 

@@ -31,6 +31,22 @@ export interface BatchResult {
   results: (Analysis | BatchError)[];
 }
 
+export interface DailyMetric {
+  day: string;
+  count: number;
+  cost_usd: number;
+}
+
+export interface Metrics {
+  total_analyses: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+  avg_processing_time_ms: number;
+  model: string;
+  by_day: DailyMetric[];
+}
+
 export type DetailLevel = 'simple' | 'medium' | 'detailed';
 export type ExportFormat = 'json' | 'markdown';
 

@@ -3,6 +3,7 @@ import type {
   BatchResult,
   DetailLevel,
   ExportFormat,
+  Metrics,
 } from './types';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -17,6 +18,10 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 
 export function fetchHistory(): Promise<Analysis[]> {
   return fetch(`${API_URL}/api/history`).then((r) => jsonOrThrow<Analysis[]>(r));
+}
+
+export function fetchMetrics(): Promise<Metrics> {
+  return fetch(`${API_URL}/api/metrics`).then((r) => jsonOrThrow<Metrics>(r));
 }
 
 export function analyzeBatch(

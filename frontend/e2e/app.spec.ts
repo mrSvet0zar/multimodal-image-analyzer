@@ -27,6 +27,21 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/history', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
+  await page.route('**/api/metrics', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        total_analyses: 3,
+        total_input_tokens: 2000,
+        total_output_tokens: 800,
+        total_cost_usd: 0.02,
+        avg_processing_time_ms: 4000,
+        model: 'claude-sonnet-5',
+        by_day: [{ day: '2026-08-20', count: 3, cost_usd: 0.02 }],
+      }),
+    }),
+  );
   await page.route('**/api/images/**', (route) =>
     route.fulfill({ status: 200, contentType: 'image/png', body: PNG }),
   );
@@ -61,4 +76,9 @@ test('loads, toggles theme, and analyzes an image', async ({ page }) => {
 
   await expect(page.getByText('A blue circle.')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('heading', { name: 't.png' })).toBeVisible();
+
+  // Dashboard tab shows the usage metrics.
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.getByText('Analyses', { exact: true })).toBeVisible();
+  await expect(page.getByText('claude-sonnet-5')).toBeVisible();
 });

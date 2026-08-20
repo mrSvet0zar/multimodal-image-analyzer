@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ImageUpload from './components/ImageUpload';
 import AnalysisDisplay from './components/AnalysisDisplay';
 import History from './components/History';
+import Dashboard from './components/Dashboard';
 import {
   API_URL,
   analyzeBatch,
@@ -10,10 +11,12 @@ import {
   deleteAnalysis,
   exportAnalysis,
   fetchHistory,
+  fetchMetrics,
 } from './api';
 import { isBatchError, type Analysis, type DetailLevel, type ExportFormat } from './types';
 
 type Theme = 'light' | 'dark';
+type View = 'analyzer' | 'dashboard';
 
 function App() {
   const queryClient = useQueryClient();
@@ -22,6 +25,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [streamText, setStreamText] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [view, setView] = useState<View>('analyzer');
   const [theme, setTheme] = useState<Theme>(
     () =>
       (document.documentElement.dataset.theme as Theme) ||
@@ -41,8 +45,16 @@ function App() {
     queryFn: fetchHistory,
   });
 
-  const invalidateHistory = () =>
+  const { data: metrics, isLoading: metricsLoading } = useQuery({
+    queryKey: ['metrics'],
+    queryFn: fetchMetrics,
+    enabled: view === 'dashboard',
+  });
+
+  const invalidateHistory = () => {
     queryClient.invalidateQueries({ queryKey: ['history'] });
+    queryClient.invalidateQueries({ queryKey: ['metrics'] });
+  };
 
   const batchMutation = useMutation({
     mutationFn: (vars: { files: File[]; detailLevel: DetailLevel; language: string }) =>
@@ -133,61 +145,81 @@ function App() {
           </h1>
           <p>Powered by Claude Vision</p>
         </div>
-        <button
-          className="theme-toggle"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label="Toggle theme"
-        >
-          {theme === 'dark' ? '☀️' : '🌙'}
-        </button>
+        <div className="header-actions">
+          <nav className="tabs">
+            <button
+              className={view === 'analyzer' ? 'active' : ''}
+              onClick={() => setView('analyzer')}
+            >
+              Analyzer
+            </button>
+            <button
+              className={view === 'dashboard' ? 'active' : ''}
+              onClick={() => setView('dashboard')}
+            >
+              Dashboard
+            </button>
+          </nav>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+        </div>
       </header>
 
-      <div className="container">
-        <div className="main">
-          <ImageUpload onUpload={handleUpload} loading={loading} />
+      {view === 'dashboard' ? (
+        <Dashboard metrics={metrics} loading={metricsLoading} />
+      ) : (
+        <div className="container">
+          <div className="main">
+            <ImageUpload onUpload={handleUpload} loading={loading} />
 
-          {error && <div className="error-banner">⚠️ {error}</div>}
+            {error && <div className="error-banner">⚠️ {error}</div>}
 
-          {streaming && (
-            <div className="analysis-display streaming-card">
-              <div className="streaming-header">
-                <span className="live-dot" />
+            {streaming && (
+              <div className="analysis-display streaming-card">
+                <div className="streaming-header">
+                  <span className="live-dot" />
+                  Analyzing…
+                </div>
+                <p className="streaming-text">
+                  {streamText}
+                  <span className="stream-cursor">▋</span>
+                </p>
+              </div>
+            )}
+
+            {loading && !streaming && (
+              <div className="loading">
+                <div className="spinner" />
                 Analyzing…
               </div>
-              <p className="streaming-text">
-                {streamText}
-                <span className="stream-cursor">▋</span>
-              </p>
-            </div>
-          )}
+            )}
 
-          {loading && !streaming && (
-            <div className="loading">
-              <div className="spinner" />
-              Analyzing…
-            </div>
-          )}
+            {currentAnalysis && !loading && (
+              <AnalysisDisplay
+                analysis={currentAnalysis}
+                apiUrl={API_URL}
+                onExport={handleExport}
+              />
+            )}
+          </div>
 
-          {currentAnalysis && !loading && (
-            <AnalysisDisplay
-              analysis={currentAnalysis}
+          <aside className="sidebar">
+            <History
+              images={history}
               apiUrl={API_URL}
-              onExport={handleExport}
+              onSelect={setCurrentAnalysis}
+              onDelete={(id) => deleteMutation.mutate(id)}
+              activeId={currentAnalysis?.id}
             />
-          )}
+          </aside>
         </div>
-
-        <aside className="sidebar">
-          <History
-            images={history}
-            apiUrl={API_URL}
-            onSelect={setCurrentAnalysis}
-            onDelete={(id) => deleteMutation.mutate(id)}
-            activeId={currentAnalysis?.id}
-          />
-        </aside>
-      </div>
+      )}
     </div>
   );
 }
