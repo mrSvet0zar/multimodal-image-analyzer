@@ -4,14 +4,12 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 
-import aiofiles
 import anthropic
 import structlog
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app import db
 from app.config import settings
@@ -19,16 +17,17 @@ from app.image_utils import process_image
 from app.logging_setup import configure_logging, logger
 from app.rate_limit import RateLimiter, client_key
 from app.schemas import AnalysisObject, ImageAnalysis
+from app.storage import get_storage
 from app.vision_service import (
     STREAM_MARKER,
     SUPPORTED_MEDIA_TYPES,
     VisionAnalyzer,
 )
 
-UPLOAD_DIR = Path(settings.upload_dir)
 MAX_FILE_SIZE = settings.max_file_size
 
 vision_analyzer: VisionAnalyzer | None = None
+storage = get_storage()
 analyze_limiter = RateLimiter(settings.rate_limit_max, settings.rate_limit_window)
 
 
@@ -41,7 +40,6 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown. Init logging + DB and verify the Claude connection."""
     global vision_analyzer
     configure_logging()
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     await db.init_db()
     try:
         vision_analyzer = VisionAnalyzer()
@@ -124,11 +122,11 @@ async def _process_upload(
 
     image_id = str(uuid.uuid4())
     extension = filename.rsplit(".", 1)[-1] if "." in filename else "img"
-    file_path = UPLOAD_DIR / f"{image_id}.{extension}"
 
     # Store the original bytes for display; send the normalized JPEG to Claude.
-    async with aiofiles.open(file_path, "wb") as f:
-        await f.write(content)
+    location = await storage.save(
+        f"{image_id}.{extension}", content, content_type or "application/octet-stream"
+    )
 
     start_time = time.time()
     try:
@@ -139,13 +137,13 @@ async def _process_upload(
             language=language,
         )
     except anthropic.APIError as exc:
-        file_path.unlink(missing_ok=True)
+        await storage.delete(location)
         logger.error("vision_api_error", error=str(exc))
         raise HTTPException(status_code=502, detail=f"Vision service error: {exc}") from exc
     processing_time = (time.time() - start_time) * 1000
 
     result = _build_result(image_id, filename, analysis_data, processing_time, usage)
-    await db.save_analysis(result.model_dump(mode="json"), str(file_path))
+    await db.save_analysis(result.model_dump(mode="json"), location)
 
     logger.info(
         "image_analyzed",
@@ -297,10 +295,12 @@ async def analyze_stream(
     filename = file.filename or "image"
     image_id = str(uuid.uuid4())
     extension = filename.rsplit(".", 1)[-1] if "." in filename else "img"
-    file_path = UPLOAD_DIR / f"{image_id}.{extension}"
 
-    async with aiofiles.open(file_path, "wb") as f:
-        await f.write(content)
+    location = await storage.save(
+        f"{image_id}.{extension}",
+        content,
+        file.content_type or "application/octet-stream",
+    )
 
     async def event_stream():
         start_time = time.time()
@@ -345,7 +345,7 @@ async def analyze_stream(
                         yield _sse({"type": "delta", "text": full[sent:emit_upto]})
                         sent = emit_upto
         except anthropic.APIError as exc:
-            file_path.unlink(missing_ok=True)
+            await storage.delete(location)
             logger.error("vision_api_error", error=str(exc), streaming=True)
             yield _sse({"type": "error", "detail": f"Vision service error: {exc}"})
             return
@@ -356,7 +356,7 @@ async def analyze_stream(
         processing_time = (time.time() - start_time) * 1000
         analysis_data = VisionAnalyzer.parse_stream_output(full)
         result = _build_result(image_id, filename, analysis_data, processing_time, usage)
-        await db.save_analysis(result.model_dump(mode="json"), str(file_path))
+        await db.save_analysis(result.model_dump(mode="json"), location)
         logger.info(
             "image_analyzed",
             image_id=image_id,
@@ -407,23 +407,24 @@ async def get_analysis(image_id: str):
 @app.delete("/api/analysis/{image_id}")
 async def delete_analysis(image_id: str):
     """Delete an analysis and its stored image file."""
-    file_path = await db.delete(image_id)
-    if file_path is None:
+    location = await db.delete(image_id)
+    if location is None:
         raise HTTPException(status_code=404, detail="Image not found")
-    try:
-        Path(file_path).unlink(missing_ok=True)
-    except OSError:
-        pass
+    await storage.delete(location)
     return {"deleted": image_id}
 
 
 @app.get("/api/images/{image_id}")
 async def get_image_file(image_id: str):
     """Serve the raw uploaded image so the frontend can display it."""
-    file_path = await db.get_file_path(image_id)
-    if file_path is None or not Path(file_path).exists():
+    location = await db.get_file_path(image_id)
+    if location is None:
         raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(file_path)
+    loaded = await storage.load(location)
+    if loaded is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    data, content_type = loaded
+    return Response(content=data, media_type=content_type)
 
 
 # ============ Export ============

@@ -49,13 +49,12 @@ def temp_db(tmp_path):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    """TestClient with an isolated DB, upload dir, and a mocked vision service."""
+    """TestClient with an isolated DB, local storage, and a mocked vision service."""
     from app import db, main
+    from app.storage import LocalStorage
 
     db.configure(_sqlite_url(tmp_path))
-    uploads = tmp_path / "uploads"
-    uploads.mkdir()
-    monkeypatch.setattr(main, "UPLOAD_DIR", uploads)
+    monkeypatch.setattr(main, "storage", LocalStorage(tmp_path / "uploads"))
 
     asyncio.run(db.init_db())
 

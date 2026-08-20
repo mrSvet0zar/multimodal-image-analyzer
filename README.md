@@ -54,6 +54,7 @@ multimodal/
 │   │   ├── image_utils.py     # Validation + redimensionnement (Pillow)
 │   │   ├── rate_limit.py      # Rate limiting par IP
 │   │   ├── db.py             # Persistance SQLAlchemy (SQLite/Postgres) + métriques
+│   │   ├── storage.py         # Stockage images : local ou S3/R2
 │   │   └── schemas.py         # Modèles Pydantic
 │   ├── alembic/               # Migrations de schéma (versions/)
 │   ├── evals/                 # Dataset golden + scoring (run_evals.py)
@@ -170,6 +171,9 @@ Paramètres de requête pour l'analyse : `detail_level` (`simple`|`medium`|`deta
 - **Persistance** — **SQLAlchemy 2.0 async** : un seul code parle SQLite
   (dev/tests, zéro serveur) *ou* **Postgres** (prod) selon `DATABASE_URL`.
   Schéma versionné par **Alembic** (`alembic upgrade head` au déploiement).
+- **Stockage objet** — abstraction `Storage` ([storage.py](backend/app/storage.py)) :
+  disque local (dev) *ou* **S3 / Cloudflare R2** (prod) selon `S3_BUCKET`. Combiné
+  à Postgres, le backend devient **stateless → scalable horizontalement**.
 
 ### Évaluations (evals)
 
@@ -216,8 +220,19 @@ disponibles (`pre-commit install`).
 En local/tests, `DATABASE_URL` par défaut est une base SQLite (`./analyses.db`),
 aucun serveur requis.
 
-### Images (Railway Volume)
+### Images — S3 / Cloudflare R2 (recommandé)
 
-Le disque d'un conteneur Railway est éphémère. Pour conserver les **images**
-uploadées entre redéploiements : service backend → **Volumes** → **New Volume**,
-mount path `/data`, puis `UPLOAD_DIR=/data/uploads`.
+Pour un backend **stateless** (scalable, pas de disque local), stocker les images
+sur S3/R2. Créer un bucket, puis définir sur le service backend :
+
+```
+S3_BUCKET=<bucket>
+S3_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com   # R2 ; vide pour AWS S3
+S3_REGION=auto                                               # R2 ; ex. eu-west-1 pour S3
+S3_ACCESS_KEY_ID=<key>
+S3_SECRET_ACCESS_KEY=<secret>
+```
+
+Sans `S3_BUCKET`, les images vont sur le disque local — sur Railway, monter alors
+un **Volume** à `/data` avec `UPLOAD_DIR=/data/uploads` pour qu'elles survivent
+aux redéploiements.

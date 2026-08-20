@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     # SQLite by default (dev/tests); set DATABASE_URL to a Postgres URL in prod.
     database_url: str = "sqlite+aiosqlite:///./analyses.db"
 
+    # --- Object storage (S3 / Cloudflare R2) ---
+    # If s3_bucket is set, images go to S3/R2; otherwise to the local filesystem.
+    s3_bucket: str = ""
+    s3_endpoint_url: str = ""  # e.g. https://<account>.r2.cloudflarestorage.com
+    s3_region: str = "auto"
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+
     # --- HTTP / limits ---
     api_port: int = 8000
     cors_origins: str = "http://localhost:5173"
