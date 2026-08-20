@@ -18,25 +18,27 @@ const LANGUAGES: { value: string; label: string }[] = [
   { value: 'zh', label: '中文' },
 ];
 
+interface Preview {
+  url: string;
+  isVideo: boolean;
+}
+
 export default function ImageUpload({ onUpload, loading }: Props) {
   const [detailLevel, setDetailLevel] = useState<DetailLevel>('medium');
   const [language, setLanguage] = useState('en');
-  const [previews, setPreviews] = useState<string[]>([]);
+  const [previews, setPreviews] = useState<Preview[]>([]);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       if (acceptedFiles.length === 0) return;
 
-      Promise.all(
-        acceptedFiles.map(
-          (file) =>
-            new Promise<string>((resolve) => {
-              const reader = new FileReader();
-              reader.onload = (e) => resolve(e.target?.result as string);
-              reader.readAsDataURL(file);
-            }),
-        ),
-      ).then(setPreviews);
+      setPreviews((prev) => {
+        prev.forEach((p) => URL.revokeObjectURL(p.url));
+        return acceptedFiles.map((file) => ({
+          url: URL.createObjectURL(file),
+          isVideo: file.type.startsWith('video/'),
+        }));
+      });
 
       onUpload(acceptedFiles, detailLevel, language);
     },
@@ -45,7 +47,10 @@ export default function ImageUpload({ onUpload, loading }: Props) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'] },
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp'],
+      'video/*': ['.mp4', '.webm', '.mov', '.avi'],
+    },
     multiple: true,
     disabled: loading,
   });
@@ -90,12 +95,12 @@ export default function ImageUpload({ onUpload, loading }: Props) {
       >
         <input {...getInputProps()} />
         {isDragActive ? (
-          <p>Drop the image(s) here…</p>
+          <p>Drop the image(s) or video here…</p>
         ) : (
           <>
-            <p className="dropzone-primary">Drag &amp; drop image(s) here</p>
+            <p className="dropzone-primary">Drag &amp; drop image(s) or a video here</p>
             <p className="dropzone-secondary">
-              or click to select · one or several · JPEG, PNG, GIF, WebP
+              or click to select · images (JPEG, PNG, GIF, WebP) or video (MP4, WebM, MOV)
             </p>
           </>
         )}
@@ -103,9 +108,13 @@ export default function ImageUpload({ onUpload, loading }: Props) {
 
       {previews.length > 0 && (
         <div className={`preview ${previews.length > 1 ? 'preview-grid' : ''}`}>
-          {previews.map((src, idx) => (
-            <img key={idx} src={src} alt={`Preview ${idx + 1}`} />
-          ))}
+          {previews.map((p, idx) =>
+            p.isVideo ? (
+              <video key={idx} src={p.url} controls muted />
+            ) : (
+              <img key={idx} src={p.url} alt={`Preview ${idx + 1}`} />
+            ),
+          )}
         </div>
       )}
     </div>

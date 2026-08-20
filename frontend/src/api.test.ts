@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { analyzeStream, deleteAnalysis, fetchHistory } from './api';
+import { analyzeStream, analyzeVideo, deleteAnalysis, fetchHistory } from './api';
 import type { Analysis } from './types';
 
 const sampleAnalysis: Analysis = {
@@ -38,6 +38,23 @@ describe('deleteAnalysis', () => {
   it('throws on a non-ok response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 500 })));
     await expect(deleteAnalysis('abc')).rejects.toThrow('Error: 500');
+  });
+});
+
+describe('analyzeVideo', () => {
+  it('posts the file and returns the analysis', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(sampleAnalysis)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'clip.mp4', {
+      type: 'video/mp4',
+    });
+    const result = await analyzeVideo(file, 'medium', 'en');
+
+    expect(result.id).toBe('abc');
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/analyze/video');
   });
 });
 

@@ -21,6 +21,7 @@ from app.rate_limit import InMemoryLimiter, Limiter, RedisLimiter, client_key
 from app.redis_client import get_redis
 from app.schemas import AnalysisObject, ImageAnalysis
 from app.storage import get_storage
+from app.video_utils import extract_frames
 from app.vision_service import (
     STREAM_MARKER,
     SUPPORTED_MEDIA_TYPES,
@@ -28,6 +29,13 @@ from app.vision_service import (
 )
 
 MAX_FILE_SIZE = settings.max_file_size
+MAX_VIDEO_SIZE = settings.max_video_size
+SUPPORTED_VIDEO_TYPES = {
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/x-msvideo",
+}
 
 # Error tracking (no-op unless SENTRY_DSN is set).
 if settings.sentry_dsn:
@@ -303,6 +311,88 @@ async def batch_analyze(
         "successful": sum(1 for r in results if "error" not in r),
         "results": results,
     }
+
+
+@app.post(
+    "/api/analyze/video",
+    response_model=ImageAnalysis,
+    dependencies=[Depends(rate_limit)],
+)
+async def analyze_video(
+    file: UploadFile = File(...),
+    detail_level: str = "medium",
+    language: str = "en",
+):
+    """Analyze a video by sampling frames and reasoning over the sequence."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(content) > MAX_VIDEO_SIZE:
+        raise HTTPException(
+            status_code=413, detail=f"Video too large. Max size: {MAX_VIDEO_SIZE} bytes"
+        )
+    if file.content_type not in SUPPORTED_VIDEO_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid video format. Supported: MP4, WebM, MOV, AVI",
+        )
+
+    content_hash = hashlib.sha256(content).hexdigest()
+    cached = await db.find_by_hash(content_hash, detail_level, language)
+    if cached is not None:
+        cached["cached"] = True
+        logger.info("cache_hit", image_id=cached["id"], kind="video")
+        return ImageAnalysis(**cached)
+
+    # Decode + sample frames off the event loop.
+    try:
+        frames, thumbnail = await asyncio.to_thread(
+            extract_frames, content, settings.video_frame_count
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await cost_guard.check()
+
+    filename = file.filename or "video"
+    image_id = str(uuid.uuid4())
+    # Store the thumbnail frame as the served image (history preview).
+    location = await storage.save(f"{image_id}.jpg", thumbnail, "image/jpeg")
+
+    start_time = time.time()
+    try:
+        analysis_data, usage = await _get_analyzer().analyze_video(
+            frames, detail_level=detail_level, language=language
+        )
+    except anthropic.APIError as exc:
+        await storage.delete(location)
+        logger.error("vision_api_error", error=str(exc), kind="video")
+        raise HTTPException(status_code=502, detail=f"Vision service error: {exc}") from exc
+    processing_time = (time.time() - start_time) * 1000
+
+    result = _build_result(image_id, filename, analysis_data, processing_time, usage)
+    await db.save_analysis(
+        result.model_dump(mode="json"),
+        location,
+        content_hash=content_hash,
+        detail_level=detail_level,
+        language=language,
+    )
+    await cost_guard.add(usage["cost_usd"])
+
+    logger.info(
+        "video_analyzed",
+        image_id=image_id,
+        model=settings.vision_model,
+        frames=len(frames),
+        detail_level=detail_level,
+        language=language,
+        duration_ms=round(processing_time, 1),
+        input_tokens=usage["input_tokens"],
+        output_tokens=usage["output_tokens"],
+        cost_usd=usage["cost_usd"],
+    )
+    return result
 
 
 def _sse(payload: dict) -> str:

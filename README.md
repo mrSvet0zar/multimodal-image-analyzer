@@ -24,6 +24,7 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 🖱️ Téléversement par glisser-déposer (JPEG, PNG, GIF, WebP)
 - 🎚️ Trois niveaux de détail : simple / medium / detailed
 - 🧠 **Sortie structurée garantie** via tool-use Claude (schéma strict, pas de parsing fragile)
+- 🎥 **Analyse vidéo** : extraction de frames (OpenCV) → Claude raisonne sur la séquence
 - ⚡ Streaming en temps réel (SSE) : la description s'affiche au fil de l'eau
 - 🏷️ Objets avec score de confiance, sentiment, tags, texte extrait
 - 🌍 Analyse dans 8 langues (sélecteur dans l'UI)
@@ -56,6 +57,7 @@ multimodal/
 │   │   ├── cost.py            # Estimation tokens/coût
 │   │   ├── logging_setup.py   # Logs JSON structurés (structlog)
 │   │   ├── image_utils.py     # Validation + redimensionnement (Pillow)
+│   │   ├── video_utils.py     # Extraction de frames vidéo (OpenCV)
 │   │   ├── rate_limit.py      # Rate limiting (mémoire ou Redis)
 │   │   ├── cost_guard.py      # Plafond de dépense quotidien (Redis)
 │   │   ├── redis_client.py    # Client Redis async partagé
@@ -159,6 +161,7 @@ Backend + frontend + volume de données, puis http://localhost:5173.
 | POST    | `/api/analyze/image`         | Analyser une seule image                 |
 | POST    | `/api/analyze/stream`        | Analyser une image en streaming (SSE)    |
 | POST    | `/api/analyze/batch`         | Analyser plusieurs images                |
+| POST    | `/api/analyze/video`         | Analyser une vidéo (extraction de frames) |
 | GET     | `/api/history`               | Lister les images analysées (récentes)   |
 | GET     | `/api/metrics`               | Métriques agrégées (analyses, tokens, coût) |
 | GET     | `/api/analysis/{id}`         | Métadonnées d'analyse d'une image        |

@@ -8,6 +8,7 @@ import {
   API_URL,
   analyzeBatch,
   analyzeStream,
+  analyzeVideo,
   deleteAnalysis,
   exportAnalysis,
   fetchHistory,
@@ -84,12 +85,28 @@ function App() {
     onError: (e: Error) => setError(e.message),
   });
 
+  const videoMutation = useMutation({
+    mutationFn: (vars: { file: File; detailLevel: DetailLevel; language: string }) =>
+      analyzeVideo(vars.file, vars.detailLevel, vars.language),
+    onSuccess: (data) => {
+      setCurrentAnalysis(data);
+      invalidateHistory();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
   const handleUpload = async (
     files: File[],
     detailLevel: DetailLevel,
     language: string,
   ) => {
     setError(null);
+
+    if (files.length === 1 && files[0].type.startsWith('video/')) {
+      setCurrentAnalysis(null);
+      videoMutation.mutate({ file: files[0], detailLevel, language });
+      return;
+    }
 
     if (files.length === 1) {
       setStreaming(true);
@@ -133,7 +150,7 @@ function App() {
     }
   };
 
-  const loading = streaming || batchMutation.isPending;
+  const loading = streaming || batchMutation.isPending || videoMutation.isPending;
 
   return (
     <div className="app">

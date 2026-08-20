@@ -159,6 +159,51 @@ class VisionAnalyzer:
 
         return data, usage_to_dict(message.usage)
 
+    async def analyze_video(
+        self,
+        frames: list[bytes],
+        detail_level: str = "medium",
+        language: str = "en",
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Analyze a video from sampled frames and return (analysis, usage)."""
+        desc = DETAIL_DESC.get(detail_level, DETAIL_DESC["medium"])
+        content: list[dict] = []
+        for i, frame in enumerate(frames):
+            content.append({"type": "text", "text": f"Frame {i + 1}:"})
+            content.append(self._image_block(frame, "image/jpeg"))
+
+        instruction = (
+            f"These are {len(frames)} frames sampled in chronological order from a "
+            f"single video. Analyze the video as a whole and call record_image_analysis "
+            f"with {desc} of what happens across the frames, the main subjects/objects "
+            "(each with a confidence between 0 and 1), the overall sentiment/mood, 5-10 "
+            "relevant tags, and any text visible (empty string if none)."
+        )
+        if language and language != "en":
+            instruction += f"\n\nWrite all text values in this language: {language}."
+        content.append({"type": "text", "text": instruction})
+
+        message = await self._create_with_fallback(
+            max_tokens=1500,
+            tools=[ANALYSIS_TOOL],
+            tool_choice={"type": "tool", "name": ANALYSIS_TOOL["name"]},
+            messages=[{"role": "user", "content": content}],
+        )
+
+        data: dict[str, Any] = {}
+        for block in message.content:
+            if block.type == "tool_use" and block.name == ANALYSIS_TOOL["name"]:
+                data = dict(block.input)
+                break
+
+        data.setdefault("description", "")
+        data.setdefault("objects", [])
+        data.setdefault("sentiment", "neutral")
+        data.setdefault("tags", [])
+        data.setdefault("extracted_text", "")
+
+        return data, usage_to_dict(message.usage)
+
     async def stream_analyze_image(
         self,
         image_data: bytes,

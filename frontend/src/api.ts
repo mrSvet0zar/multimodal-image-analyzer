@@ -37,6 +37,19 @@ export function analyzeBatch(
   ).then((r) => jsonOrThrow<BatchResult>(r));
 }
 
+export function analyzeVideo(
+  file: File,
+  detailLevel: DetailLevel,
+  language: string,
+): Promise<Analysis> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return fetch(
+    `${API_URL}/api/analyze/video?detail_level=${detailLevel}&language=${language}`,
+    { method: 'POST', body: fd },
+  ).then((r) => jsonOrThrow<Analysis>(r));
+}
+
 export async function deleteAnalysis(id: string): Promise<void> {
   const res = await fetch(`${API_URL}/api/analysis/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Error: ${res.status}`);

@@ -157,6 +157,23 @@ def test_delete_missing_analysis_404(client):
     assert client.delete("/api/analysis/does-not-exist").status_code == 404
 
 
+def test_analyze_video(client, video_bytes):
+    res = client.post("/api/analyze/video", files={"file": ("clip.mp4", video_bytes, "video/mp4")})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["filename"] == "clip.mp4"
+    assert data["description"] == "a test image"  # from the mocked analyzer
+    assert data["cached"] is False
+    assert data["image_url"].startswith("/api/images/")
+    # The thumbnail frame is served.
+    assert client.get(data["image_url"]).status_code == 200
+
+
+def test_analyze_video_rejects_non_video(client):
+    res = client.post("/api/analyze/video", files={"file": ("x.txt", b"hello", "text/plain")})
+    assert res.status_code == 400
+
+
 def test_batch_analyze(client, png_bytes):
     res = client.post(
         "/api/analyze/batch",

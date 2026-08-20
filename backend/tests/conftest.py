@@ -29,9 +29,34 @@ def make_image_bytes(size=(64, 64), color=(120, 80, 200), fmt="PNG") -> bytes:
     return buf.getvalue()
 
 
+def make_video_bytes(frames: int = 15, size=(160, 120)) -> bytes:
+    import os
+    import tempfile
+
+    import cv2
+    import numpy as np
+
+    path = tempfile.mktemp(suffix=".mp4")
+    writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), 10.0, size)
+    for i in range(frames):
+        frame = np.zeros((size[1], size[0], 3), np.uint8)
+        frame[:] = ((i * 12) % 255, 80, 160)
+        writer.write(frame)
+    writer.release()
+    with open(path, "rb") as f:
+        data = f.read()
+    os.unlink(path)
+    return data
+
+
 @pytest.fixture
 def png_bytes() -> bytes:
     return make_image_bytes()
+
+
+@pytest.fixture
+def video_bytes() -> bytes:
+    return make_video_bytes()
 
 
 def _sqlite_url(tmp_path) -> str:
@@ -60,6 +85,7 @@ def client(tmp_path, monkeypatch):
 
     mock = AsyncMock()
     mock.analyze_image = AsyncMock(return_value=(dict(SAMPLE_ANALYSIS), dict(SAMPLE_USAGE)))
+    mock.analyze_video = AsyncMock(return_value=(dict(SAMPLE_ANALYSIS), dict(SAMPLE_USAGE)))
     monkeypatch.setattr(main, "vision_analyzer", mock)
 
     # No context manager -> lifespan doesn't run -> our mock stays in place.

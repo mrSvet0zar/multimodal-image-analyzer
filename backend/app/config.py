@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # --- Uploads / storage ---
     max_file_size: int = 10 * 1024 * 1024
+    max_video_size: int = 25 * 1024 * 1024
+    video_frame_count: int = 8
     upload_dir: str = "./uploads"
 
     # --- Database ---
