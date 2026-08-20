@@ -28,6 +28,17 @@ from app.vision_service import (
 
 MAX_FILE_SIZE = settings.max_file_size
 
+# Error tracking (no-op unless SENTRY_DSN is set).
+if settings.sentry_dsn:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        traces_sample_rate=0.1,
+        send_default_pii=False,
+    )
+
 vision_analyzer: VisionAnalyzer | None = None
 storage = get_storage()
 
@@ -95,6 +106,11 @@ async def request_context(request: Request, call_next):
         duration_ms=round(duration_ms, 1),
     )
     response.headers["X-Request-ID"] = request_id
+    # Security headers.
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -510,6 +526,7 @@ async def status():
         "storage": "s3" if settings.s3_bucket else "local",
         "database": "postgres" if "postgres" in settings.database_url else "sqlite",
         "redis_enabled": _redis is not None,
+        "sentry_enabled": bool(settings.sentry_dsn),
         "daily_cost_limit_usd": settings.daily_cost_limit_usd,
         "rate_limit": f"{settings.rate_limit_max}/{settings.rate_limit_window}s",
     }

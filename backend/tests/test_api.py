@@ -19,6 +19,13 @@ def test_status(client):
     assert body["storage"] in ("s3", "local")
 
 
+def test_security_headers(client):
+    res = client.get("/health")
+    assert res.headers["X-Content-Type-Options"] == "nosniff"
+    assert res.headers["X-Frame-Options"] == "DENY"
+    assert "X-Request-ID" in res.headers
+
+
 def test_analyze_image_ok(client, png_bytes):
     res = client.post(
         "/api/analyze/image",

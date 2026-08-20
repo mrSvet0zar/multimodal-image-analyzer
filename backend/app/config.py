@@ -58,8 +58,10 @@ class Settings(BaseSettings):
     # Global daily spend cap in USD; 0 disables the guard.
     daily_cost_limit_usd: float = 0.0
 
-    # --- Logging ---
+    # --- Logging / error tracking ---
     log_level: str = "INFO"
+    sentry_dsn: str = ""
+    environment: str = "production"
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -30,6 +30,9 @@ jobs:
         run: mypy
       - name: Pytest
         run: pytest -q
+      - name: Security audit (pip-audit)
+        continue-on-error: true
+        run: pip-audit -r requirements.txt
 
   frontend:
     name: Frontend (build)

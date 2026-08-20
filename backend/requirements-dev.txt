@@ -7,3 +7,4 @@ mypy==1.14.1
 types-aiofiles==24.1.0.20241221
 moto[s3]==5.0.28
 fakeredis==2.26.2
+pip-audit==2.7.3
