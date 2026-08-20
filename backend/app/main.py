@@ -717,6 +717,7 @@ async def status():
         "database": "postgres" if "postgres" in settings.database_url else "sqlite",
         "redis_enabled": _redis is not None,
         "sentry_enabled": bool(settings.sentry_dsn),
+        "transcription_enabled": bool(settings.openai_api_key),
         "daily_cost_limit_usd": settings.daily_cost_limit_usd,
         "rate_limit": f"{settings.rate_limit_max}/{settings.rate_limit_window}s",
     }
