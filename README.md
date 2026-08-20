@@ -7,14 +7,15 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 
 **Stack :** FastAPI + Claude Vision d'Anthropic (backend) · React 18 + Vite (frontend)
 
+[![CI](https://github.com/mrSvet0zar/multimodal-image-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/mrSvet0zar/multimodal-image-analyzer/actions/workflows/ci.yml)
+
 ### 🔗 Démo en ligne
 
 - **App :** https://multimodal-image-analyzer.vercel.app
 - **API :** https://multimodal-image-analyzer-production.up.railway.app/docs
 
-> Frontend sur Vercel · Backend sur Railway. Les images et l'historique sont
-> stockés en mémoire sur l'offre gratuite : ils sont réinitialisés à chaque
-> redémarrage du backend.
+> Frontend sur Vercel · Backend sur Railway (build Nixpacks + volume persistant
+> pour SQLite et les images).
 
 ---
 
@@ -22,7 +23,7 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 
 - 🖱️ Téléversement par glisser-déposer (JPEG, PNG, GIF, WebP)
 - 🎚️ Trois niveaux de détail : simple / medium / detailed
-- 🧠 Analyse structurée via Claude Vision (`claude-sonnet-5`)
+- 🧠 **Sortie structurée garantie** via tool-use Claude (schéma strict, pas de parsing fragile)
 - ⚡ Streaming en temps réel (SSE) : la description s'affiche au fil de l'eau
 - 🏷️ Objets avec score de confiance, sentiment, tags, texte extrait
 - 🌍 Analyse dans 8 langues (sélecteur dans l'UI)
@@ -31,8 +32,11 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 📤 Export en JSON ou Markdown
 - 🕑 Historique **persistant** (SQLite) avec vignettes
 - 🛡️ Validation + redimensionnement d'image (Pillow), rate limiting par IP
+- 🔁 **Résilience** : retries/backoff + timeout + modèle de fallback
+- 📊 **Observabilité** : tokens & coût par appel, logs JSON avec request-id, `/api/metrics`
+- ✅ **Évaluations** : dataset golden + scoring automatisé avec seuil
 - 🌙 Dark mode (persistant, suit la préférence système) + micro-animations
-- 🧪 Suite de tests pytest (25 tests)
+- 🧪 34 tests (pytest), lint **ruff** + types **mypy**, **CI GitHub Actions**, **Docker**
 
 ---
 
@@ -42,21 +46,26 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 multimodal/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py            # Routes FastAPI
-│   │   ├── vision_service.py  # Intégration Claude Vision
+│   │   ├── main.py            # Routes FastAPI + middleware (request-id, logs)
+│   │   ├── vision_service.py  # Claude Vision : tool-use + streaming + fallback
+│   │   ├── config.py          # Config typée (pydantic-settings)
+│   │   ├── cost.py            # Estimation tokens/coût
+│   │   ├── logging_setup.py   # Logs JSON structurés (structlog)
+│   │   ├── image_utils.py     # Validation + redimensionnement (Pillow)
+│   │   ├── rate_limit.py      # Rate limiting par IP
+│   │   ├── db.py             # Persistance SQLite (aiosqlite) + métriques
 │   │   └── schemas.py         # Modèles Pydantic
-│   ├── uploads/               # Images stockées (ignoré par git)
-│   ├── requirements.txt
-│   └── .env                   # Tes secrets (ignoré par git)
-└── frontend/
-    ├── src/
-    │   ├── App.jsx
-    │   ├── App.css
-    │   └── components/
-    │       ├── ImageUpload.jsx
-    │       ├── AnalysisDisplay.jsx
-    │       └── History.jsx
-    └── package.json
+│   ├── evals/                 # Dataset golden + scoring (run_evals.py)
+│   ├── tests/                 # 34 tests pytest
+│   ├── Dockerfile.local       # Image backend (docker compose ; Railway = Nixpacks)
+│   ├── ruff.toml · mypy.ini · pytest.ini
+│   └── requirements.txt · requirements-dev.txt
+├── frontend/
+│   ├── src/ (App.jsx, App.css, components/)
+│   ├── Dockerfile             # build multi-stage → nginx
+│   └── package.json
+├── .github/workflows/ci.yml   # Lint + types + tests + build
+└── docker-compose.yml         # Stack complète en local
 ```
 
 ---
@@ -100,16 +109,27 @@ npm run dev
 
 Ouvre http://localhost:5173
 
-### 3. Tests (backend)
+### 3. Qualité (backend)
 
 ```bash
 cd backend
 pip install -r requirements-dev.txt
-pytest
+ruff check .        # lint
+ruff format --check .
+mypy                # types
+pytest              # 34 tests (service Vision mocké, aucun appel API réel)
 ```
 
-24 tests couvrent le traitement d'image, la couche SQLite, le rate limiter et
-les endpoints (service Vision mocké, aucun appel API réel).
+Les tests couvrent le traitement d'image, la couche SQLite, le rate limiter, le
+calcul de coût, le scoring des evals et tous les endpoints (streaming inclus).
+
+### 4. Docker (stack complète en local)
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
+```
+
+Backend + frontend + volume de données, puis http://localhost:5173.
 
 ---
 
@@ -121,6 +141,7 @@ les endpoints (service Vision mocké, aucun appel API réel).
 | POST    | `/api/analyze/stream`        | Analyser une image en streaming (SSE)    |
 | POST    | `/api/analyze/batch`         | Analyser plusieurs images                |
 | GET     | `/api/history`               | Lister les images analysées (récentes)   |
+| GET     | `/api/metrics`               | Métriques agrégées (analyses, tokens, coût) |
 | GET     | `/api/analysis/{id}`         | Métadonnées d'analyse d'une image        |
 | GET     | `/api/images/{id}`           | Servir l'image téléversée brute          |
 | GET     | `/api/export/{id}?format=`   | Exporter l'analyse (`json` / `markdown`) |
@@ -130,13 +151,39 @@ Paramètres de requête pour l'analyse : `detail_level` (`simple`|`medium`|`deta
 
 ---
 
-## Notes
+## Ingénierie « production-ready »
 
-- Les analyses sont stockées **en mémoire** — elles disparaissent au redémarrage
-  du backend. Remplacer `analyzed_images` dans `main.py` par SQLite/Postgres pour
-  les rendre persistantes.
-- Le modèle Claude se configure via `VISION_MODEL` dans `.env`
-  (défaut : `claude-sonnet-5`).
+- **Sortie structurée garantie** — l'analyse passe par un *tool-use* Claude à
+  schéma strict ([`vision_service.py`](backend/app/vision_service.py)) : le JSON
+  est toujours valide, sans parsing défensif.
+- **Résilience** — client configuré avec `timeout` + `max_retries` (backoff), et
+  un `VISION_FALLBACK_MODEL` optionnel essayé si le modèle principal est saturé.
+- **Observabilité** — chaque appel logge tokens, coût (€ estimé), latence et
+  modèle en **JSON structuré** ([`logging_setup.py`](backend/app/logging_setup.py))
+  avec un **request-id** de corrélation ; agrégats via `GET /api/metrics`.
+- **Config typée** — `pydantic-settings` ([`config.py`](backend/app/config.py)),
+  source unique validée au démarrage.
+- **Persistance** — SQLite via `aiosqlite` ; en prod, un volume Railway au
+  `/data` (voir Déploiement).
+
+### Évaluations (evals)
+
+Un dataset « golden » d'images générées avec vérité terrain connue, scoré
+automatiquement contre les sorties du modèle, avec seuil de réussite :
+
+```bash
+cd backend
+python -m evals.run_evals --threshold 0.75
+```
+
+Utile pour mesurer l'impact d'un changement de prompt/modèle. Lançable à la
+demande en CI (job manuel « Evals »).
+
+### CI/CD
+
+[GitHub Actions](.github/workflows/ci.yml) sur chaque push/PR : `ruff` (lint +
+format), `mypy` (types), `pytest`, et build du frontend. Pre-commit hooks
+disponibles (`pre-commit install`).
 
 ---
 
@@ -148,6 +195,10 @@ Paramètres de requête pour l'analyse : `detail_level` (`simple`|`medium`|`deta
   Railway fournit `PORT` automatiquement.
 - **Frontend (Vercel) :** Root Directory = `frontend`, variable `VITE_API_URL` = l'URL Railway.
 - Un push sur `main` redéploie automatiquement les deux services.
+
+> ⚠️ Railway (Root Directory = `backend`) construit un `backend/Dockerfile` s'il
+> en trouve un, au lieu d'utiliser Nixpacks. L'image Docker locale est donc
+> nommée `Dockerfile.local` — ne pas la renommer en `Dockerfile`.
 
 ### ⚠️ Persistance en production (Railway Volume)
 
