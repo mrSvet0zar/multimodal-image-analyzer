@@ -21,6 +21,24 @@ def test_analyze_image_ok(client, png_bytes):
     assert data["objects"][0]["name"] == "square"
     assert data["tags"] == ["test", "unit"]
     assert data["image_url"].startswith("/api/images/")
+    assert data["input_tokens"] == 100
+    assert data["output_tokens"] == 50
+    assert data["cost_usd"] == 0.00105
+
+
+def test_metrics(client, png_bytes):
+    assert client.get("/api/metrics").json()["total_analyses"] == 0
+
+    client.post(
+        "/api/analyze/image",
+        files={"file": ("a.png", png_bytes, "image/png")},
+    )
+
+    metrics = client.get("/api/metrics").json()
+    assert metrics["total_analyses"] == 1
+    assert metrics["total_input_tokens"] == 100
+    assert metrics["total_output_tokens"] == 50
+    assert round(metrics["total_cost_usd"], 5) == 0.00105
 
 
 def test_analyze_rejects_non_image(client):
@@ -106,6 +124,7 @@ def test_analyze_stream(client, png_bytes):
             '"sentiment":"neutral","tags":["red","square"],"extracted_text":""}',
         ]:
             yield chunk
+        yield {"__usage__": {"input_tokens": 80, "output_tokens": 40, "cost_usd": 0.00084}}
 
     main.vision_analyzer.stream_analyze_image = fake_stream
 
@@ -136,6 +155,8 @@ def test_analyze_stream(client, png_bytes):
     assert analysis["description"] == "A red square on white."
     assert analysis["objects"][0]["name"] == "square"
     assert analysis["tags"] == ["red", "square"]
+    assert analysis["input_tokens"] == 80
+    assert analysis["cost_usd"] == 0.00084
 
     # Persisted to history.
     assert len(client.get("/api/history").json()) == 1

@@ -6,12 +6,13 @@ plenty for this workload and keeps lifecycle management trivial.
 """
 
 import json
-import os
 from pathlib import Path
 
 import aiosqlite
 
-DB_PATH = os.getenv("DB_PATH", "./analyses.db")
+from app.config import settings
+
+DB_PATH = settings.db_path
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS analyses (
@@ -76,6 +77,31 @@ async def get_file_path(image_id: str) -> str | None:
         ) as cur:
             row = await cur.fetchone()
     return row[0] if row else None
+
+
+async def get_metrics() -> dict:
+    """Aggregate observability metrics across all analyses."""
+    query = """
+        SELECT
+            COUNT(*) AS total,
+            COALESCE(SUM(json_extract(data, '$.input_tokens')), 0) AS input_tokens,
+            COALESCE(SUM(json_extract(data, '$.output_tokens')), 0) AS output_tokens,
+            COALESCE(SUM(json_extract(data, '$.cost_usd')), 0) AS cost_usd,
+            COALESCE(AVG(json_extract(data, '$.processing_time_ms')), 0) AS avg_ms
+        FROM analyses
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(query) as cur:
+            row = await cur.fetchone()
+
+    total, input_tokens, output_tokens, cost_usd, avg_ms = row
+    return {
+        "total_analyses": int(total),
+        "total_input_tokens": int(input_tokens),
+        "total_output_tokens": int(output_tokens),
+        "total_cost_usd": round(float(cost_usd), 6),
+        "avg_processing_time_ms": round(float(avg_ms), 1),
+    }
 
 
 async def delete(image_id: str) -> str | None:

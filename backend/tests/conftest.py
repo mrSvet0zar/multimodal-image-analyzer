@@ -20,6 +20,8 @@ SAMPLE_ANALYSIS = {
     "extracted_text": "hi",
 }
 
+SAMPLE_USAGE = {"input_tokens": 100, "output_tokens": 50, "cost_usd": 0.00105}
+
 
 def make_image_bytes(size=(64, 64), color=(120, 80, 200), fmt="PNG") -> bytes:
     buf = io.BytesIO()
@@ -54,7 +56,9 @@ def client(tmp_path, monkeypatch):
     asyncio.run(db.init_db())
 
     mock = AsyncMock()
-    mock.analyze_image = AsyncMock(return_value=dict(SAMPLE_ANALYSIS))
+    mock.analyze_image = AsyncMock(
+        return_value=(dict(SAMPLE_ANALYSIS), dict(SAMPLE_USAGE))
+    )
     monkeypatch.setattr(main, "vision_analyzer", mock)
 
     # No context manager -> lifespan doesn't run -> our mock stays in place.

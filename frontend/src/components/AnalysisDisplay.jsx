@@ -74,7 +74,16 @@ export default function AnalysisDisplay({ analysis, apiUrl, onExport }) {
       )}
 
       <div className="metadata">
-        <small>Processed in {analysis.processing_time_ms?.toFixed(0)}ms</small>
+        <small>
+          Processed in {analysis.processing_time_ms?.toFixed(0)}ms
+          {analysis.input_tokens > 0 && (
+            <>
+              {' · '}
+              {(analysis.input_tokens + analysis.output_tokens).toLocaleString()} tokens
+            </>
+          )}
+          {analysis.cost_usd > 0 && <> · ${analysis.cost_usd.toFixed(4)}</>}
+        </small>
       </div>
     </div>
   );

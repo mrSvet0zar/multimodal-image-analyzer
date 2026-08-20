@@ -19,6 +19,9 @@ class ImageAnalysis(BaseModel):
     tags: List[str] = Field(default_factory=list)
     extracted_text: str = ""
     processing_time_ms: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
     image_url: str
 
 

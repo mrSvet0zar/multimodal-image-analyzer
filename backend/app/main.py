@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -9,13 +8,15 @@ from pathlib import Path
 
 import aiofiles
 import anthropic
-from dotenv import load_dotenv
+import structlog
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app import db
+from app.config import settings
 from app.image_utils import process_image
+from app.logging_setup import configure_logging, logger
 from app.rate_limit import RateLimiter, client_key
 from app.schemas import AnalysisObject, ImageAnalysis
 from app.vision_service import (
@@ -24,15 +25,11 @@ from app.vision_service import (
     VisionAnalyzer,
 )
 
-load_dotenv()
-
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
-MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))
-RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", 30))
-RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", 60))
+UPLOAD_DIR = Path(settings.upload_dir)
+MAX_FILE_SIZE = settings.max_file_size
 
 vision_analyzer: VisionAnalyzer | None = None
-analyze_limiter = RateLimiter(RATE_LIMIT_MAX, RATE_LIMIT_WINDOW)
+analyze_limiter = RateLimiter(settings.rate_limit_max, settings.rate_limit_window)
 
 
 async def rate_limit(request: Request) -> None:
@@ -41,37 +38,53 @@ async def rate_limit(request: Request) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup / shutdown. Init DB and verify the Claude API connection once."""
+    """Startup / shutdown. Init logging + DB and verify the Claude connection."""
     global vision_analyzer
+    configure_logging()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     await db.init_db()
     try:
         vision_analyzer = VisionAnalyzer()
-        vision_analyzer.client.messages.create(
-            model=vision_analyzer.model,
+        await vision_analyzer.async_client.messages.create(
+            model=settings.vision_model,
             max_tokens=10,
             messages=[{"role": "user", "content": "Hi"}],
         )
-        print(f"[OK] Claude API connection successful (model: {vision_analyzer.model})")
+        logger.info("startup_api_check_ok", model=settings.vision_model)
     except Exception as e:  # noqa: BLE001 - surface any startup failure clearly
-        print(f"[WARN] Claude API check failed: {e}")
+        logger.warning("startup_api_check_failed", error=str(e))
     yield
 
 
 app = FastAPI(title="Image Analyzer API", version="1.0.0", lifespan=lifespan)
 
-_cors_origins = [
-    o.strip()
-    for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
-    if o.strip()
-]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    """Attach a request id, bind it to logs, and emit an access log line."""
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+    start = time.time()
+    response = await call_next(request)
+    duration_ms = (time.time() - start) * 1000
+    logger.info(
+        "http_request",
+        method=request.method,
+        path=request.url.path,
+        status=response.status_code,
+        duration_ms=round(duration_ms, 1),
+    )
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 def _get_analyzer() -> VisionAnalyzer:
@@ -119,7 +132,7 @@ async def _process_upload(
 
     start_time = time.time()
     try:
-        analysis_data = await _get_analyzer().analyze_image(
+        analysis_data, usage = await _get_analyzer().analyze_image(
             api_bytes,
             media_type="image/jpeg",
             detail_level=detail_level,
@@ -127,13 +140,27 @@ async def _process_upload(
         )
     except anthropic.APIError as exc:
         file_path.unlink(missing_ok=True)
+        logger.error("vision_api_error", error=str(exc))
         raise HTTPException(
             status_code=502, detail=f"Vision service error: {exc}"
         ) from exc
     processing_time = (time.time() - start_time) * 1000
 
-    result = _build_result(image_id, filename, analysis_data, processing_time)
+    result = _build_result(image_id, filename, analysis_data, processing_time, usage)
     await db.save_analysis(result.model_dump(mode="json"), str(file_path))
+
+    logger.info(
+        "image_analyzed",
+        image_id=image_id,
+        model=settings.vision_model,
+        detail_level=detail_level,
+        language=language,
+        streaming=False,
+        duration_ms=round(processing_time, 1),
+        input_tokens=usage["input_tokens"],
+        output_tokens=usage["output_tokens"],
+        cost_usd=usage["cost_usd"],
+    )
     return result
 
 
@@ -160,8 +187,13 @@ def _parse_objects(analysis_data: dict) -> list[AnalysisObject]:
 
 
 def _build_result(
-    image_id: str, filename: str, analysis_data: dict, processing_time: float
+    image_id: str,
+    filename: str,
+    analysis_data: dict,
+    processing_time: float,
+    usage: dict | None = None,
 ) -> ImageAnalysis:
+    usage = usage or {}
     return ImageAnalysis(
         id=image_id,
         filename=filename,
@@ -172,6 +204,9 @@ def _build_result(
         tags=[str(t) for t in analysis_data.get("tags", []) if t],
         extracted_text=str(analysis_data.get("extracted_text", "")),
         processing_time_ms=processing_time,
+        input_tokens=int(usage.get("input_tokens", 0)),
+        output_tokens=int(usage.get("output_tokens", 0)),
+        cost_usd=float(usage.get("cost_usd", 0.0)),
         image_url=f"/api/images/{image_id}",
     )
 
@@ -283,6 +318,7 @@ async def analyze_stream(
         full = ""
         sent = 0  # length of description already streamed
         cut = False  # marker reached — stop streaming, JSON follows
+        usage: dict = {}
         try:
             async for chunk in analyzer.stream_analyze_image(
                 api_bytes,
@@ -290,6 +326,10 @@ async def analyze_stream(
                 detail_level=detail_level,
                 language=language,
             ):
+                # The generator yields a final dict carrying token usage.
+                if isinstance(chunk, dict):
+                    usage = chunk.get("__usage__", {})
+                    continue
                 full += chunk
                 if cut:
                     continue
@@ -308,6 +348,7 @@ async def analyze_stream(
                         sent = emit_upto
         except anthropic.APIError as exc:
             file_path.unlink(missing_ok=True)
+            logger.error("vision_api_error", error=str(exc), streaming=True)
             yield _sse({"type": "error", "detail": f"Vision service error: {exc}"})
             return
 
@@ -316,8 +357,22 @@ async def analyze_stream(
 
         processing_time = (time.time() - start_time) * 1000
         analysis_data = VisionAnalyzer.parse_stream_output(full)
-        result = _build_result(image_id, filename, analysis_data, processing_time)
+        result = _build_result(
+            image_id, filename, analysis_data, processing_time, usage
+        )
         await db.save_analysis(result.model_dump(mode="json"), str(file_path))
+        logger.info(
+            "image_analyzed",
+            image_id=image_id,
+            model=settings.vision_model,
+            detail_level=detail_level,
+            language=language,
+            streaming=True,
+            duration_ms=round(processing_time, 1),
+            input_tokens=usage.get("input_tokens", 0),
+            output_tokens=usage.get("output_tokens", 0),
+            cost_usd=usage.get("cost_usd", 0.0),
+        )
         yield _sse({"type": "complete", "analysis": result.model_dump(mode="json")})
 
     return StreamingResponse(
@@ -334,6 +389,14 @@ async def analyze_stream(
 async def get_history():
     """Get analysis history (most recent first)."""
     return await db.get_all()
+
+
+@app.get("/api/metrics")
+async def get_metrics():
+    """Aggregate usage metrics: total analyses, tokens, cost, avg latency."""
+    metrics = await db.get_metrics()
+    metrics["model"] = settings.vision_model
+    return metrics
 
 
 @app.get("/api/analysis/{image_id}")
