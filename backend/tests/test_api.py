@@ -9,6 +9,16 @@ def test_health(client):
     assert res.json() == {"status": "ok"}
 
 
+def test_status(client):
+    res = client.get("/api/status")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "ok"
+    assert "redis_enabled" in body
+    assert "daily_cost_limit_usd" in body
+    assert body["storage"] in ("s3", "local")
+
+
 def test_analyze_image_ok(client, png_bytes):
     res = client.post(
         "/api/analyze/image",

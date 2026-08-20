@@ -493,12 +493,26 @@ async def export_analysis(image_id: str, format: str = "json"):
     raise HTTPException(status_code=400, detail="Unsupported format")
 
 
-# ============ Health ============
+# ============ Health / status ============
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/status")
+async def status():
+    """Readiness/config introspection (no secrets) — which backends are active."""
+    return {
+        "status": "ok",
+        "model": settings.vision_model,
+        "storage": "s3" if settings.s3_bucket else "local",
+        "database": "postgres" if "postgres" in settings.database_url else "sqlite",
+        "redis_enabled": _redis is not None,
+        "daily_cost_limit_usd": settings.daily_cost_limit_usd,
+        "rate_limit": f"{settings.rate_limit_max}/{settings.rate_limit_window}s",
+    }
 
 
 if __name__ == "__main__":
