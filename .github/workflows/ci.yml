@@ -48,6 +48,12 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Unit tests (Vitest)
+        run: npm run test
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: E2E tests (Playwright)
+        run: npm run test:e2e
 
   evals:
     # Costs money + needs the API key — run manually via "Run workflow".

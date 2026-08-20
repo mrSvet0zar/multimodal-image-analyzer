@@ -26,6 +26,11 @@ dist/
 frontend/dist/
 *.tsbuildinfo
 
+# Playwright
+frontend/playwright-report/
+frontend/test-results/
+frontend/.playwright/
+
 # Editors / OS
 .vscode/
 .idea/

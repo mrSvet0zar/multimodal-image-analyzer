@@ -3,6 +3,8 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 COPY package*.json ./
+# The build doesn't need Playwright's browsers.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm ci
 
 COPY . .

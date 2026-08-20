@@ -37,7 +37,8 @@ Markdown, et un panneau d'historique conserve les analyses récentes.
 - 📊 **Observabilité** : tokens & coût par appel, logs JSON avec request-id, `/api/metrics`
 - ✅ **Évaluations** : dataset golden + scoring automatisé avec seuil
 - 🌙 Dark mode (persistant, suit la préférence système) + micro-animations
-- 🧪 34 tests (pytest), lint **ruff** + types **mypy**, **CI GitHub Actions**, **Docker**
+- 🧪 Tests backend (pytest) **et frontend** (Vitest + Playwright E2E), lint **ruff**
+  + types **mypy**, **CI GitHub Actions**, **Docker**
 
 ---
 
@@ -116,6 +117,14 @@ npm run dev
 ```
 
 Ouvre http://localhost:5173
+
+Tests frontend :
+
+```bash
+cd frontend
+npm run test        # Vitest (composants + couche API/SSE)
+npm run test:e2e    # Playwright E2E (backend mocké)
+```
 
 ### 3. Qualité (backend)
 
